@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "files": [],
+  "references": [
+    { "path": "./packages/config" },
+    { "path": "./packages/contracts" },
+    { "path": "./packages/events" },
+    { "path": "./packages/logging" },
+    { "path": "./packages/observability" },
+    { "path": "./tests" }
+  ]
+}
