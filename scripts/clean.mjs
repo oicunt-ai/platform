@@ -11,6 +11,7 @@ const targetDirs = [
   'packages/events/dist',
   'packages/logging/dist',
   'packages/observability/dist',
+  'templates/service/dist',
 ];
 
 for (const target of targetDirs) {

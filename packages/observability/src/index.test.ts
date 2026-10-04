@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NoopMetricsRecorder, NoopSpan, NoopTracer } from './index.js';
+import { NoopMetricsRecorder, NoopSpan, NoopTracer, type Span } from './index.js';
 
 describe('@oicunt/observability', () => {
   it('NoopSpan should provide dummy context and accept attributes without errors', () => {
@@ -20,7 +20,7 @@ describe('@oicunt/observability', () => {
     const span = tracer.startSpan('operation.name');
     expect(span).toBeDefined();
 
-    const result = await tracer.withSpan('traced.work', async (activeSpan) => {
+    const result = await tracer.withSpan('traced.work', async (activeSpan: Span) => {
       activeSpan.setAttribute('executed', true);
       return 'work-done';
     });

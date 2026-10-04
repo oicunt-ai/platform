@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createBaseConfig } from '../packages/config/src/index.js';
 import { calculatePagination, HttpStatus, ok } from '../packages/contracts/src/index.js';
-import { createDomainEvent, InMemoryEventBus } from '../packages/events/src/index.js';
+import {
+  createDomainEvent,
+  InMemoryEventBus,
+  type DomainEvent,
+} from '../packages/events/src/index.js';
 import { MemoryLogger } from '../packages/logging/src/index.js';
 import { NoopTracer } from '../packages/observability/src/index.js';
 
@@ -23,7 +27,7 @@ describe('Platform Foundation Integration', () => {
       const emitted: string[] = [];
 
       await bus.subscribe('foundation.verified', {
-        async handle(event) {
+        async handle(event: DomainEvent<unknown>) {
           emitted.push(event.name);
         },
       });

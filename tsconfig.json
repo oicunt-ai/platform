@@ -7,6 +7,6 @@
     { "path": "./packages/events" },
     { "path": "./packages/logging" },
     { "path": "./packages/observability" },
-    { "path": "./tests" }
+    { "path": "./templates/service" }
   ]
 }

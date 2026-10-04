@@ -3,8 +3,8 @@ import { execSync } from 'node:child_process';
 const steps = [
   { name: 'Format Check', command: 'pnpm format:check' },
   { name: 'Lint', command: 'pnpm lint' },
-  { name: 'Type Check', command: 'pnpm type-check' },
   { name: 'Build', command: 'pnpm build' },
+  { name: 'Type Check', command: 'pnpm type-check' },
   { name: 'Tests', command: 'pnpm test' },
 ];
 

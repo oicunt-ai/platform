@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDomainEvent, InMemoryEventBus } from './index.js';
+import { createDomainEvent, InMemoryEventBus, type DomainEvent } from './index.js';
 
 describe('@oicunt/events', () => {
   it('should create domain events with metadata and uuid', () => {
@@ -24,7 +24,7 @@ describe('@oicunt/events', () => {
     const received: string[] = [];
 
     const unsubscribe = await bus.subscribe('test.event', {
-      async handle(event) {
+      async handle(event: DomainEvent<unknown>) {
         received.push(event.name);
       },
     });

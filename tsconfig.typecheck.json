@@ -3,7 +3,20 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "composite": false,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@oicunt/config": ["./packages/config/src/index.ts"],
+      "@oicunt/contracts": ["./packages/contracts/src/index.ts"],
+      "@oicunt/events": ["./packages/events/src/index.ts"],
+      "@oicunt/logging": ["./packages/logging/src/index.ts"],
+      "@oicunt/observability": ["./packages/observability/src/index.ts"]
+    }
   },
-  "include": ["packages/*/src/**/*.ts", "tests/**/*.ts"]
+  "include": [
+    "packages/*/src/**/*.ts",
+    "tests/**/*.ts",
+    "templates/*/src/**/*.ts",
+    "templates/*/tests/**/*.ts"
+  ]
 }

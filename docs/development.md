@@ -88,7 +88,7 @@ To consume a workspace package inside another package or service, use `workspace
 
 ---
 
-## 5. Adding New Packages
+## 5. Adding New Shared Packages
 
 When introducing a new shared package under `packages/<name>`:
 
@@ -102,8 +102,69 @@ When introducing a new shared package under `packages/<name>`:
 
 ---
 
-## 6. Code Style & Standards
+## 6. Developing Microservices
+
+All platform backend services reside in `services/<service-name>` and follow **Hexagonal / Clean Architecture** (Ports and Adapters).
+
+### 6.1 Scaffolding a New Service
+
+To create a new service from the canonical platform blueprint:
+
+```bash
+node scripts/create-service.mjs <service-name>
+```
+
+For example:
+
+```bash
+node scripts/create-service.mjs payment-service
+```
+
+This automates:
+
+1. Copying the canonical blueprint from `templates/service/` to `services/<service-name>/`.
+2. Setting the package name to `@oicunt/service-<service-name>`.
+3. Configuring typed service configuration and initial ports.
+
+### 6.2 Service Registration Checklist
+
+After scaffolding:
+
+1. Add `{ "path": "./services/<service-name>" }` to the `references` list in root `tsconfig.json`.
+2. Run `pnpm install` to link workspace dependencies.
+3. Verify the new service compiles and passes initial tests:
+   ```bash
+   pnpm verify
+   ```
+
+### 6.3 Layer Development Conventions
+
+When implementing features inside a service:
+
+1. **Domain (`src/domain/`)**:
+   - Write pure TypeScript entities, value objects, and domain errors.
+   - Define outbound port interfaces (e.g. `RepositoryPort`).
+   - Do **not** import any framework, database client, or outer layer.
+
+2. **Application (`src/application/`)**:
+   - Implement use case interactors (`UseCase<TInput, TOutput>`).
+   - Return functional `Result<T, DomainError>` envelopes from `@oicunt/contracts`.
+   - Never leak database or HTTP specifics into use cases.
+
+3. **Infrastructure (`src/infrastructure/`)**:
+   - Implement outbound ports (database repositories, message bus publishers, remote client proxies).
+   - Inject service configuration loaded via `@oicunt/config`.
+
+4. **Interfaces (`src/interfaces/`)**:
+   - Inbound adapters: HTTP controllers/routers and message subscribers.
+   - Always map errors to `ApiErrorResponse` and include `X-Correlation-ID`.
+   - Implement `/healthz` (liveness) and `/readyz` (readiness) probe endpoints.
+
+---
+
+## 7. Code Style & Standards
 
 - **TypeScript Strictness**: Do not use `any` unless strictly necessary with documented justification. Prefer `unknown` and type guards.
 - **Explicit Returns**: Keep exported functions and public API contracts strongly typed.
 - **Formatting**: Run `pnpm format` before opening a pull request.
+- **Error Handling**: Use `Result<T, E>` for operational flows; avoid throwing untyped runtime exceptions.

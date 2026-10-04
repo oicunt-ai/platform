@@ -1,7 +1,7 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "..",
+    "rootDir": ".",
     "outDir": "../dist/tests",
     "composite": true
   },
@@ -12,5 +12,5 @@
     { "path": "../packages/logging" },
     { "path": "../packages/observability" }
   ],
-  "include": ["**/*", "../packages/**/src/**/*.test.ts"]
+  "include": ["**/*"]
 }
