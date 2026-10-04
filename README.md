@@ -18,6 +18,8 @@ platform/
 ├── .github/                 # CI/CD workflows (GitHub Actions)
 ├── docs/                    # Architecture, design decisions, and dev guides
 │   ├── architecture.md      # Platform architecture & principles
+│   ├── contracts/           # Cross-service architectural contracts
+│   │   └── first-vertical-slice.md # First AI vertical slice specification
 │   ├── development.md       # Local environment & script reference
 │   └── contributing.md      # Branching, commits, and PR standards
 ├── infrastructure/          # Cloud infrastructure and deployment configurations
@@ -129,6 +131,7 @@ Every pull request and push to `main` executes the automated GitHub Actions CI w
 ## 📚 Documentation
 
 - [Architecture Overview](docs/architecture.md)
+- [First AI Vertical Slice Contract](docs/contracts/first-vertical-slice.md)
 - [Development Guide](docs/development.md)
 - [Contributing Guidelines](docs/contributing.md)
 

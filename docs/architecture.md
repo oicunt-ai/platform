@@ -37,6 +37,8 @@ platform/
 ├── .github/                 # Automation & CI/CD workflows
 ├── docs/                    # Architecture, design decisions, and operating runbooks
 │   ├── architecture.md      # Platform & service architecture specifications
+│   ├── contracts/           # Cross-service architectural contracts
+│   │   └── first-vertical-slice.md # First AI vertical slice specification
 │   ├── development.md       # Development setup & service scaffolding guide
 │   └── contributing.md      # PR guidelines & conventional commit standards
 ├── infrastructure/          # Infrastructure as Code (IaC) and cloud manifests
