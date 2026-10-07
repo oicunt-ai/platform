@@ -66,7 +66,16 @@ services/<service-name>/
 
 ---
 
-## 3. Creating a New Service
+## 3. Registered Production Services
+
+| Service Directory      | Package Name                  | Responsibility & Domain Scope                                                                                                                                  |
+| :--------------------- | :---------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services/api-gateway` | `@oicunt/service-api-gateway` | Ingress perimeter, rate limiting, token authentication, authoritative header injection (`X-Request-ID`, `X-Tenant-ID`, `X-User-ID`), and routing.              |
+| `services/usage`       | `@oicunt/service-usage`       | Authoritative company-wide usage metering, durable append-only event log, idempotent ingestion (HTTP & AMQP), hourly/daily rollups, reversals, and query APIs. |
+
+---
+
+## 4. Creating a New Service
 
 To instantiate a new service from the canonical platform blueprint:
 

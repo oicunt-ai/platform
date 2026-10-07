@@ -1,0 +1,35 @@
+{
+  "name": "@oicunt/service-usage",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b && node -e \"import('node:fs').then(fs => { fs.mkdirSync('dist/infrastructure/database/migrations', { recursive: true }); fs.cpSync('src/infrastructure/database/migrations', 'dist/infrastructure/database/migrations', { recursive: true }); });\"",
+    "type-check": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@oicunt/config": "workspace:*",
+    "@oicunt/contracts": "workspace:*",
+    "@oicunt/events": "workspace:*",
+    "@oicunt/logging": "workspace:*",
+    "@oicunt/observability": "workspace:*",
+    "amqplib": "^2.2.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.8",
+    "@types/node": "^26.6.4",
+    "@types/pg": "^8.11.10",
+    "typescript": "~5.7.3"
+  },
+  "description": "OICUNT platform usage & metering microservice"
+}

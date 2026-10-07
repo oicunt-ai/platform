@@ -38,7 +38,8 @@ platform/
 ├── docs/                    # Architecture, design decisions, and operating runbooks
 │   ├── architecture.md      # Platform & service architecture specifications
 │   ├── contracts/           # Cross-service architectural contracts
-│   │   └── first-vertical-slice.md # First AI vertical slice specification
+│   │   ├── first-vertical-slice.md # First AI vertical slice specification
+│   │   └── usage.md         # Usage & metering contract and migration path
 │   ├── development.md       # Development setup & service scaffolding guide
 │   └── contributing.md      # PR guidelines & conventional commit standards
 ├── infrastructure/          # Infrastructure as Code (IaC) and cloud manifests
@@ -397,3 +398,38 @@ Every code change must satisfy all automated quality gates before integration:
 3. **Static Analysis & Linting**: ESLint flat config with TypeScript rules and zero tolerated warnings/errors.
 4. **Type Soundness**: Full TypeScript build validation with project references (`tsc -b`).
 5. **Automated Testing**: Complete test suite execution across all workspace packages via Vitest.
+
+---
+
+## 8. Platform Usage & Metering Subsystem
+
+The **Usage & Metering Subsystem** (`@oicunt/service-usage` located in `services/usage/`) is the central, authoritative system of record for tracking resource consumption across all OICUNT business verticals and platform components.
+
+### 8.1 System Boundaries & Ownership Separation
+
+- **Platform Ownership**:
+  - Authoritative metering system of record.
+  - Durable, immutable append-only event log (`oicunt_usage.usage_events`).
+  - Strict tenant isolation and scoped deduplication (`uq_usage_events_tenant_idempotency`).
+  - Pre-computed hourly and daily rollups (`usage_aggregates_hourly`, `usage_aggregates_daily`).
+  - Compensating adjustments and reversals.
+  - Authoritative query surface for internal dashboards, quotas, and future billing/invoicing engines.
+
+- **AI Platform (`ai-platform`) Ownership**:
+  - Event producer only.
+  - Measures AI-specific execution units (`tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cached_input`, `vectors.dimensions`, `tool.calls`, `agent.steps`, `duration.ms`).
+  - Emits normalized `UsageEvent` payloads to the Platform Usage AMQP topic exchange (`oicunt.usage.exchange`) or synchronous HTTP ingestion API.
+  - Explicitly prohibited from acting as a company-wide meter or storing billing-authoritative records.
+
+### 8.2 Ingestion & Persistence Model
+
+1. **Generalized Canonical Contract**:
+   Events adhere to `UsageEvent` from `@oicunt/contracts`. Measurement numbers are stored in `measurements` (with arbitrary custom metric support), qualitative groupings in `dimensions`, and tracing provenance in `lineage`.
+2. **Append-Only Immutability**:
+   Events are immutable. Postgres trigger constraints (`trg_prevent_usage_events_mutation`) reject any `UPDATE` or `DELETE` statements on the raw event table.
+3. **Idempotency Guarantee**:
+   Deduplication is enforced per `(tenant_id, idempotency_key)`. Duplicate deliveries are safely accepted and flagged as duplicates without altering state.
+4. **Reversal Model**:
+   Corrections, voids, or SLA credits are recorded as new usage events with negative measurement values referencing the original event via `lineage.reversalOf`.
+
+For complete API specifications and migration procedures, refer to [Usage Architecture Contract](contracts/usage.md).

@@ -8,6 +8,7 @@
     { "path": "./packages/logging" },
     { "path": "./packages/observability" },
     { "path": "./templates/service" },
-    { "path": "./services/api-gateway" }
+    { "path": "./services/api-gateway" },
+    { "path": "./services/usage" }
   ]
 }
