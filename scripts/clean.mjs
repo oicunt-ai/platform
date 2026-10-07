@@ -12,6 +12,7 @@ const targetDirs = [
   'packages/logging/dist',
   'packages/observability/dist',
   'templates/service/dist',
+  'services/api-gateway/dist',
 ];
 
 for (const target of targetDirs) {

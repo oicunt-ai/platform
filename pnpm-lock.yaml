@@ -204,6 +204,24 @@ importers:
 
   packages/observability: {}
 
+  services/api-gateway:
+    dependencies:
+      '@oicunt/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@oicunt/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@oicunt/events':
+        specifier: workspace:*
+        version: link:../../packages/events
+      '@oicunt/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@oicunt/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
+
   templates/service:
     dependencies:
       '@oicunt/config':
