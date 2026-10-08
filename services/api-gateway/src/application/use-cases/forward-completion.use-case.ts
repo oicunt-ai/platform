@@ -93,10 +93,10 @@ export class ForwardCompletionUseCase {
       );
     }
 
-    const modelRegex = /^oicunt\.model\.[a-z0-9_-]+$/;
+    const modelRegex = /^(oicunt\.model\.[a-z0-9_-]+|claude-sonnet)$/;
     if (!modelRegex.test(rec['model'].trim())) {
       return new ValidationError(
-        `Field 'model' must follow canonical pattern 'oicunt.model.<tier>', received '${rec['model']}'`,
+        `Field 'model' must follow canonical pattern 'oicunt.model.<tier>' or 'claude-sonnet', received '${rec['model']}'`,
         'model',
       );
     }

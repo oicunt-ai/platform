@@ -369,4 +369,40 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
       await failingGateway.stop();
     }
   });
+
+  it('accepts and forwards canonical model claude-sonnet to orchestrator', async () => {
+    const token = signTestJwt(
+      {
+        sub: 'usr_claude_user',
+        tenant_id: 'tnt_claude_tenant',
+        iss: 'https://auth.oicunt.internal',
+        aud: 'oicunt-platform',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'ai:use',
+      },
+      jwtCtx.privateKey,
+      { kid: 'gw-comp-key' },
+    );
+
+    const res = await makePostRequest(
+      gatewayPort,
+      '/api/v1/ai/completions',
+      {
+        conversationId: 'conv-claude-test',
+        model: 'claude-sonnet',
+        messages: [{ role: 'user', content: 'Explain quantum computing in one sentence.' }],
+      },
+      {
+        Authorization: `Bearer ${token}`,
+        'X-Correlation-ID': 'corr-claude-sonnet-1',
+      },
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(lastOrchestratorRequestBody).toBeDefined();
+    expect(lastOrchestratorRequestBody?.['model']).toBe('claude-sonnet');
+    expect(lastOrchestratorRequestHeaders?.['x-user-id']).toBe('usr_claude_user');
+    expect(lastOrchestratorRequestHeaders?.['x-tenant-id']).toBe('tnt_claude_tenant');
+  });
 });
