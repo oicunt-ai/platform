@@ -8,18 +8,23 @@ import type {
   OrchestratorClientPort,
 } from '../../application/ports/orchestrator-client.port.js';
 
+import { createInternalServiceToken } from '../jwt/internal-service-token.js';
+
 export interface HttpOrchestratorClientOptions {
   readonly orchestratorBaseUrl: string;
   readonly requestTimeoutMs?: number | undefined;
+  readonly internalServiceSecret?: string | undefined;
 }
 
 export class HttpOrchestratorClient implements OrchestratorClientPort {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
+  private readonly internalServiceSecret?: string | undefined;
 
   constructor(options: HttpOrchestratorClientOptions) {
     this.baseUrl = options.orchestratorBaseUrl.replace(/\/+$/, '');
     this.timeoutMs = options.requestTimeoutMs ?? 60000; // 60s default
+    this.internalServiceSecret = options.internalServiceSecret;
   }
 
   async forwardCompletion(request: ForwardCompletionRequest): Promise<ForwardCompletionResponse> {
@@ -44,6 +49,16 @@ export class HttpOrchestratorClient implements OrchestratorClientPort {
       'X-Tenant-ID': request.tenantId,
       'X-Service-Name': 'api-gateway',
     };
+
+    if (this.internalServiceSecret) {
+      const token = createInternalServiceToken({
+        issuer: 'api-gateway',
+        audience: 'ai-orchestrator',
+        secret: this.internalServiceSecret,
+        expiresInSeconds: 300,
+      });
+      headers['Authorization'] = `Bearer ${token}`;
+    }
 
     return new Promise((resolve, reject) => {
       const clientReq = requester(

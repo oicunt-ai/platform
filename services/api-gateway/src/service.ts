@@ -49,6 +49,7 @@ export class GatewayServiceInstance {
       dependencies.orchestratorClient ??
       new HttpOrchestratorClient({
         orchestratorBaseUrl: this.config.orchestratorBaseUrl,
+        internalServiceSecret: this.config.internalServiceSecret,
       });
   }
 

@@ -14,6 +14,7 @@ export interface GatewayConfig extends BaseServiceConfig {
   readonly jwtAudience?: string | undefined;
   readonly clockSkewSeconds: number;
   readonly orchestratorBaseUrl: string;
+  readonly internalServiceSecret?: string | undefined;
 }
 
 export function loadServiceConfig(overrides?: Partial<GatewayConfig>): GatewayConfig {
@@ -36,6 +37,10 @@ export function loadServiceConfig(overrides?: Partial<GatewayConfig>): GatewayCo
     overrides?.orchestratorBaseUrl ??
     process.env['ORCHESTRATOR_BASE_URL'] ??
     'http://localhost:3001';
+  const internalServiceSecret =
+    overrides?.internalServiceSecret ??
+    process.env['INTERNAL_SERVICE_SECRET'] ??
+    process.env['INTERNAL_SERVICE_TOKEN'];
 
   const base = createBaseConfig(overrides?.serviceName ?? 'api-gateway', {
     environment: env,
@@ -54,5 +59,6 @@ export function loadServiceConfig(overrides?: Partial<GatewayConfig>): GatewayCo
     jwtAudience,
     clockSkewSeconds: Number.isNaN(clockSkewSeconds) ? 60 : clockSkewSeconds,
     orchestratorBaseUrl,
+    internalServiceSecret,
   };
 }

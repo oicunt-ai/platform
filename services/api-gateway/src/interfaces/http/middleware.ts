@@ -67,6 +67,7 @@ export function createGatewayRequestContext(
     'x-permission',
     'x-service-name',
     'x-request-id',
+    'x-internal-token',
   ]);
 
   for (const headerKey of Object.keys(req.headers)) {
