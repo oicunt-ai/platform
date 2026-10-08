@@ -15,9 +15,26 @@ This document establishes the formal, binding architectural contract for the fir
 The canonical request path flows sequentially across six distinct architectural boundaries:
 
 ```
-┌─────────┐      ┌─────────────┐      ┌─────────────────┐      ┌────────────────┐      ┌───────────────┐      ┌────────────────┐
-│  BILLY  │ ───► │ API Gateway │ ───► │ AI Orchestrator │ ───► │ Model Registry │ ───► │ Model Gateway │ ───► │ Model Provider │
-└─────────┘      └─────────────┘      └─────────────────┘      └────────────────┘      └───────────────┘      └────────────────┘
+┌─────────┐      ┌─────────────┐      ┌─────────────────┐
+│  BILLY  │ ───► │ API Gateway │ ───► │ AI Orchestrator │
+└─────────┘      └─────────────┘      └────────┬────────┘
+                                               │
+                       ┌───────────────────────┴───────────────────────┐
+                       │ (Control Plane)                               │ (Runtime Execution)
+                       ▼                                               ▼
+            ┌────────────────────┐                          ┌────────────────────┐
+            │   Model Registry   │                          │ Inference Service  │
+            └────────────────────┘                          └──────────┬─────────┘
+                                                                       │
+                                                                       ▼
+                                                            ┌────────────────────┐
+                                                            │   Model Gateway    │
+                                                            └──────────┬─────────┘
+                                                                       │ (Provider Adapter)
+                                                                       ▼
+                                                            ┌────────────────────┐
+                                                            │   Model Provider   │
+                                                            └────────────────────┘
 ```
 
 ```mermaid
@@ -28,22 +45,26 @@ sequenceDiagram
     participant APIGW as OICUNT API Gateway
     participant Orch as AI Orchestrator
     participant Reg as Model Registry
+    participant Inf as Inference Service
     participant MGW as Model Gateway
     participant Provider as Model Provider (Upstream)
 
-    User->>BILLY: Inputs prompt & selects model (e.g. oicunt.model.general)
+    User->>BILLY: Inputs prompt & selects model (e.g. claude-sonnet)
     BILLY->>APIGW: POST /api/v1/ai/completions (Normalized Request + Bearer Token + optional X-Correlation-ID)
     Note over APIGW: 1. Authenticates User Token<br/>2. Strips untrusted client identity headers<br/>3. Authoritatively generates X-Request-ID<br/>4. Adopts or generates X-Correlation-ID<br/>5. Injects trusted X-User-ID & X-Tenant-ID
-    APIGW->>Orch: POST /internal/v1/orchestrator/chat (Trusted Service-to-Service)
+    APIGW->>Orch: POST /internal/v1/orchestrator/chat (Authenticated Service-to-Service)
     Note over Orch: Validates conversation structure<br/>Initiates orchestration span
-    Orch->>Reg: GET /internal/v1/models/oicunt.model.general (Resolve Model)
+    Orch->>Reg: GET /internal/v1/models/resolve/claude-sonnet (Resolve Model)
     Reg-->>Orch: 200 OK (Resolved Model Spec: Provider, Model Target, Limits)
-    Orch->>MGW: POST /internal/v1/models/dispatch (Normalized Request + Resolved Target)
+    Orch->>Inf: POST /internal/v1/inference/execute (Prompt/Context + Resolution)
+    Note over Inf: Coordinates runtime inference execution<br/>Applies inference lifecycle policies
+    Inf->>MGW: POST /internal/v1/models/dispatch (Normalized Request + Resolved Target)
     Note over MGW: Selects Provider Adapter<br/>Translates Normalized Payload to Provider Schema
     MGW->>Provider: Upstream API Call (Provider Credentials)
     Provider-->>MGW: Provider Response / Stream Chunks
     Note over MGW: Generates completionId & normalizes Chunks into OICUNT Canonical Format
-    MGW-->>Orch: Normalized Response / SSE Events
+    MGW-->>Inf: Normalized Response / SSE Events
+    Inf-->>Orch: Normalized Response / SSE Events
     Orch-->>APIGW: Normalized Response / SSE Events
     APIGW-->>BILLY: Normalized Response / SSE Stream (text/event-stream)
     BILLY-->>User: Renders assistant response in real-time
@@ -85,14 +106,18 @@ graph TD
         APIGW["OICUNT API Gateway<br/>(Ingress & Authoritative Auth)"]
     end
 
+    subgraph ControlPlane["Control Plane (Catalog & Resolution)"]
+        Reg["Model Registry<br/>(Model Catalog & Routing Spec)"]
+    end
+
     subgraph OrchestrationLayer["Internal Service Mesh (Trusted)"]
         Orch["AI Orchestrator<br/>(Turn & Workflow Engine)"]
-        Reg["Model Registry<br/>(Model Catalog & Routing Spec)"]
+        Inf["Inference Service<br/>(Runtime Inference Coordination)"]
     end
 
     subgraph GatewayLayer["Egress Gateway Layer (Trusted)"]
         MGW["Model Gateway<br/>(Normalization & Resilience)"]
-        Adapter["Provider Adapters<br/>(Vendor SDKs & Drivers)"]
+        Adapter["Provider Adapters<br/>(Internal Gateway Modules)"]
     end
 
     subgraph ExternalLayer["External Layer"]
@@ -100,9 +125,10 @@ graph TD
     end
 
     BILLY -->|HTTPS / SSE (Bearer Token)| APIGW
-    APIGW -->|Internal HTTP / mTLS (Trusted Headers)| Orch
-    Orch -->|Internal HTTP| Reg
-    Orch -->|Internal HTTP / SSE| MGW
+    APIGW -->|Internal HTTP / Service Auth| Orch
+    Orch -->|Internal HTTP (Control Plane)| Reg
+    Orch -->|Internal HTTP / Service Auth| Inf
+    Inf -->|Internal HTTP / Service Auth| MGW
     MGW --> Adapter
     Adapter -->|HTTPS Egress (Platform Vault Keys)| Provider
 ```
@@ -112,7 +138,7 @@ graph TD
 - **Role**: User-facing conversational client application.
 - **Responsibilities**:
   - Accepts user prompt input and maintains local client-side presentation state.
-  - Allows the user to select an OICUNT canonical model (e.g. `oicunt.model.general`, `oicunt.model.reasoning`, `oicunt.model.fast`).
+  - Allows the user to select an OICUNT canonical model (e.g. `claude-sonnet`, `oicunt.model.general`, `oicunt.model.reasoning`, `oicunt.model.fast`).
   - Supplies conversation identity (`conversationId`) to track multi-turn dialogues.
   - Sends normalized completion requests to the OICUNT API Gateway with user Bearer tokens.
   - May provide an optional client-side `X-Correlation-ID` header.
@@ -139,6 +165,7 @@ graph TD
     - Evaluates incoming `X-Correlation-ID`: adopts it if provided as a valid string, or generates a new UUID v4 if missing.
   - Enforces ingress rate limiting and payload validation.
   - Proxies normalized unary responses and streams SSE frames without buffering or modifying payloads.
+  - Signs internal service-to-service authentication tokens (`X-Internal-Service-Token` or Bearer) for downstream propagation.
 - **Forbidden**:
   - Never trusts client-supplied identity headers or client-asserted request IDs.
   - Never executes AI orchestration logic or prompt mutation.
@@ -151,33 +178,46 @@ graph TD
   - Validates conversation integrity, message sequencing, and role validity (`system`, `user`, `assistant`).
   - Correlates dialogue history using `conversationId`.
   - Consumes trusted `X-User-ID` and `X-Tenant-ID` provided by the API Gateway over authenticated service-to-service communication.
-  - Queries the Model Registry to resolve canonical model capabilities and parameter bounds.
+  - Queries the Model Registry control-plane to resolve canonical model capabilities, target configurations, and parameter bounds.
   - Applies platform-level prompt guardrails and policy constraints.
-  - Dispatches normalized AI requests to the Model Gateway.
-  - Coordinates streaming lifecycle from the Model Gateway back to the API Gateway.
+  - Dispatches runtime execution requests to the Inference Service with internal service authentication.
+  - Coordinates streaming lifecycle from the Inference Service back to the API Gateway.
 - **Forbidden**:
   - Contains **zero** provider-specific SDKs, API calls, or payload formatting code.
   - Never accepts requests directly from untrusted clients bypassing the API Gateway.
   - Never reads or holds external provider API keys or credentials.
   - Never interacts directly with third-party model provider endpoints.
 
-### 3.4 Model Registry
+### 3.4 Inference Service
 
-- **Role**: Authoritative catalog and routing directory for AI models.
+- **Role**: Runtime inference execution and streaming coordination service.
 - **Responsibilities**:
-  - Maintains the registry of OICUNT canonical model identifiers (`oicunt.model.*`).
+  - Receives normalized conversation context and model resolution specifications from the AI Orchestrator.
+  - Coordinates runtime inference execution lifecycle and streaming chunk delivery.
+  - Dispatches execution requests to the Model Gateway using internal service authentication.
+  - Normalizes and streams chunks/completions back to the AI Orchestrator.
+- **Forbidden**:
+  - Never performs model catalog resolution or pricing lookup (owned by Model Registry).
+  - Never interacts directly with third-party model provider endpoints or manages vendor credentials (owned by Model Gateway).
+
+### 3.5 Model Registry
+
+- **Role**: Authoritative catalog and routing directory for AI models (Control Plane).
+- **Responsibilities**:
+  - Maintains the registry of OICUNT canonical model identifiers (`claude-sonnet`, `oicunt.model.*`).
   - Resolves canonical identifiers to concrete provider targets, including provider name, upstream model ID, context window limits, and parameter constraints.
   - Manages deployment routing policies (active routing, canary routing, fallbacks, blue-green migrations).
-  - Exposes an internal query API for the AI Orchestrator and Model Gateway.
+  - Exposes an internal query API for dynamic catalog discovery and model resolution.
 - **Forbidden**:
   - Never handles user inference traffic or payload data.
   - Never initiates outbound connections to model providers.
+  - Never stores or reads provider API credentials.
 
-### 3.5 Model Gateway
+### 3.6 Model Gateway
 
 - **Role**: Egress gateway, payload normalizer, and resilience barrier for LLM providers.
 - **Responsibilities**:
-  - Receives normalized AI requests and resolved model target specifications.
+  - Receives normalized AI requests and resolved model target specifications exclusively from the Inference Service.
   - Generates the authoritative `completionId` for the generation attempt.
   - Selects and invokes the appropriate Provider Adapter.
   - Manages secure provider credential storage and retrieval via platform secret managers.
@@ -188,16 +228,16 @@ graph TD
   - Does not maintain user conversation history or session state.
   - Does not leak provider-specific data structures past its boundary.
 
-### 3.6 Provider Adapters
+### 3.7 Provider Adapters
 
-- **Role**: Low-level vendor translation plugins encapsulated entirely within the Model Gateway.
+- **Role**: Low-level vendor translation plugins encapsulated entirely within the Model Gateway (anti-corruption layer; not independent microservices).
 - **Responsibilities**:
   - Translates OICUNT normalized requests into vendor-specific wire formats (Anthropic Messages API, OpenAI Chat Completions API, Google Gemini API, etc.).
   - Translates vendor-specific streaming chunks into normalized OICUNT stream events.
   - Maps vendor-specific HTTP error codes and exception payloads into normalized gateway errors.
 - **Forbidden**:
   - Never exposed outside the Model Gateway process boundary.
-  - Never accessed directly by BILLY or the AI Orchestrator.
+  - Never accessed directly by BILLY, API Gateway, or the AI Orchestrator.
 
 ---
 
