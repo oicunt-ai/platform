@@ -87,7 +87,7 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
   let mockOrchestratorPort: number;
   let lastOrchestratorRequestHeaders: http.IncomingHttpHeaders | null = null;
   let lastOrchestratorRequestBody: Record<string, unknown> | null = null;
-  let orchestratorMode: 'unary' | 'error' = 'unary';
+  let orchestratorMode: 'unary' | 'error' | 'stream' = 'unary';
 
   beforeAll(async () => {
     // 1. Start mock AI Orchestrator
@@ -104,6 +104,21 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
           lastOrchestratorRequestBody = JSON.parse(bodyData) as Record<string, unknown>;
         } catch {
           lastOrchestratorRequestBody = null;
+        }
+
+        if (orchestratorMode === 'stream') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+          });
+          res.write('event: token\ndata: {"delta":"Hello"}\n\n');
+          res.write('event: token\ndata: {"delta":" world"}\n\n');
+          res.write(
+            'event: finish\ndata: {"finishReason":"stop","usage":{"promptTokens":10,"completionTokens":2,"totalTokens":12}}\n\n',
+          );
+          res.end();
+          return;
         }
 
         if (orchestratorMode === 'unary') {
@@ -238,7 +253,9 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
     expect(res.body.error?.code).toBe('VALIDATION_FAILED');
   });
 
-  it('rejects streaming request with 400 Bad Request as streaming is deferred to Step 5', async () => {
+  it('forwards streaming completion request with SSE response headers and chunks in Step 5', async () => {
+    orchestratorMode = 'stream';
+
     const tokenWithAiUse = signTestJwt(
       {
         sub: 'usr_streamer',
@@ -261,10 +278,14 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
       Authorization: `Bearer ${tokenWithAiUse}`,
     });
 
-    expect(res.statusCode).toBe(400);
-    expect(res.body.success).toBe(false);
-    expect(res.body.error?.code).toBe('VALIDATION_FAILED');
-    expect(res.body.error?.message).toMatch(/Streaming completions are deferred to Step 5/i);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('text/event-stream');
+    expect(res.rawText).toContain('event: token\ndata: {"delta":"Hello"}');
+    expect(res.rawText).toContain('event: token\ndata: {"delta":" world"}');
+    expect(res.rawText).toContain('event: finish');
+    expect(lastOrchestratorRequestBody?.['stream']).toBe(true);
+    expect(lastOrchestratorRequestHeaders?.['x-user-id']).toBe('usr_streamer');
+    expect(lastOrchestratorRequestHeaders?.['x-tenant-id']).toBe('tnt_streamer');
   });
 
   it('authenticates, checks ai:use, strips spoofed headers, and forwards unary completion to orchestrator', async () => {

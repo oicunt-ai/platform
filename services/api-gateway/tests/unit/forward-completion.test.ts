@@ -53,7 +53,7 @@ describe('ForwardCompletionUseCase - Unit Tests', () => {
     expect(called).toBe(false);
   });
 
-  it('should reject stream: true payload as streaming is deferred to Step 5', async () => {
+  it('should accept stream: true payload in Step 5', async () => {
     let called = false;
     const mockClient: OrchestratorClientPort = {
       async forwardCompletion() {
@@ -73,11 +73,35 @@ describe('ForwardCompletionUseCase - Unit Tests', () => {
       },
     });
 
+    expect(result.ok).toBe(true);
+    expect(called).toBe(true);
+  });
+
+  it('should reject non-boolean stream field with ValidationError', async () => {
+    let called = false;
+    const mockClient: OrchestratorClientPort = {
+      async forwardCompletion() {
+        called = true;
+        return { statusCode: 200, headers: {} };
+      },
+    };
+
+    const useCase = new ForwardCompletionUseCase(mockClient);
+    const result = await useCase.execute({
+      identity: validIdentityWithAiUse,
+      requestId: 'req-1',
+      correlationId: 'corr-1',
+      body: {
+        ...validAiPayload,
+        stream: 'not-a-bool' as unknown as boolean,
+      },
+    });
+
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(ValidationError);
       expect(result.error.statusCode).toBe(400);
-      expect(result.error.message).toMatch(/Streaming completions are deferred to Step 5/i);
+      expect(result.error.message).toMatch(/Field 'stream' must be a boolean/);
     }
     expect(called).toBe(false);
   });

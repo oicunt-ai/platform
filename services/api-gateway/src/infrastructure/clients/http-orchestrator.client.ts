@@ -29,8 +29,14 @@ export class HttpOrchestratorClient implements OrchestratorClientPort {
 
     const payloadBuffer = Buffer.from(JSON.stringify(request.body), 'utf8');
 
+    const isStream =
+      typeof request.body === 'object' &&
+      request.body !== null &&
+      (request.body as Record<string, unknown>)['stream'] === true;
+
     const headers: Record<string, string | number> = {
       'Content-Type': 'application/json',
+      Accept: isStream ? 'text/event-stream, application/json' : 'application/json',
       'Content-Length': payloadBuffer.length,
       'X-Request-ID': request.requestId,
       'X-Correlation-ID': request.correlationId,
@@ -52,6 +58,15 @@ export class HttpOrchestratorClient implements OrchestratorClientPort {
           const statusCode = res.statusCode ?? 502;
           const resHeaders = res.headers;
           const contentType = res.headers['content-type'] ?? '';
+
+          if (contentType.includes('text/event-stream')) {
+            resolve({
+              statusCode,
+              headers: resHeaders,
+              stream: res,
+            });
+            return;
+          }
 
           // Buffer unary response body
           const chunks: Buffer[] = [];

@@ -57,7 +57,21 @@ export class CompletionController {
 
       const forwardRes = forwardResult.value;
 
-      // 4. Return unary JSON response to client
+      // 4. Handle streaming (SSE) response
+      if (forwardRes.stream) {
+        res.writeHead(forwardRes.statusCode, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+          'X-Request-ID': context.requestId,
+          'X-Correlation-ID': context.correlationId,
+        });
+        forwardRes.stream.pipe(res);
+        return;
+      }
+
+      // 5. Return unary JSON response to client
       const responseData =
         typeof forwardRes.bodyData === 'string'
           ? forwardRes.bodyData

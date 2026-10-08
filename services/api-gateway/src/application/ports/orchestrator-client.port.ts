@@ -13,6 +13,7 @@ export interface ForwardCompletionResponse {
   readonly statusCode: number;
   readonly headers: IncomingHttpHeaders;
   readonly bodyData?: unknown | undefined;
+  readonly stream?: NodeJS.ReadableStream | undefined;
 }
 
 export interface OrchestratorClientPort {

@@ -69,12 +69,8 @@ export class ForwardCompletionUseCase {
 
     const rec = body as Record<string, unknown>;
 
-    // Step 1 scope: Streaming is deferred to Step 5
-    if (rec['stream'] === true) {
-      return new ValidationError(
-        'Streaming completions are deferred to Step 5. Only unary completions (stream: false) are supported in Step 1',
-        'stream',
-      );
+    if ('stream' in rec && typeof rec['stream'] !== 'boolean') {
+      return new ValidationError("Field 'stream' must be a boolean", 'stream');
     }
 
     // conversationId
