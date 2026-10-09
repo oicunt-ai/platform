@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabasePool } from '../../infrastructure/database/connection.js';
 import type { JsonLogger } from '../../infrastructure/logging/logger.js';
+import type { UsageQueueConsumerPort } from '../../application/ports/usage-queue-consumer.port.js';
 import { isHealthCheckPath, validateInternalToken } from './auth.js';
 import { extractRequestContext } from './context.js';
 import { handleLiveness, handleReadiness } from './health.js';
@@ -9,13 +10,16 @@ import type {
   IngestionController,
   QueriesController,
   ReversalsController,
+  AdmissionController,
 } from './controllers/index.js';
 
 export interface RouterDependencies {
   readonly ingestionController: IngestionController;
   readonly queriesController: QueriesController;
   readonly reversalsController: ReversalsController;
+  readonly admissionController?: AdmissionController | undefined;
   readonly dbPool: DatabasePool | null;
+  readonly queueConsumer?: UsageQueueConsumerPort | null | undefined;
   readonly internalToken?: string | undefined;
   readonly logger?: JsonLogger | undefined;
 }
@@ -33,7 +37,7 @@ export function createHttpRouter(deps: RouterDependencies) {
         return;
       }
       if (pathname === '/readyz' || pathname === '/health/readiness') {
-        await handleReadiness(res, deps.dbPool);
+        await handleReadiness(res, deps.dbPool, deps.queueConsumer?.isReady?.() ?? true);
         return;
       }
     }
@@ -42,6 +46,18 @@ export function createHttpRouter(deps: RouterDependencies) {
 
     try {
       validateInternalToken(req, deps.internalToken);
+
+      if (method === 'POST' && pathname === '/internal/v1/usage/admissions') {
+        if (!deps.admissionController) throw new Error('Admission control requires PostgreSQL');
+        await deps.admissionController.acquire(req, res, context);
+        return;
+      }
+
+      if (method === 'POST' && pathname === '/internal/v1/usage/admissions/release') {
+        if (!deps.admissionController) throw new Error('Admission control requires PostgreSQL');
+        await deps.admissionController.release(req, res, context);
+        return;
+      }
 
       // Ingestion routes
       if (method === 'POST' && pathname === '/internal/v1/usage/events') {

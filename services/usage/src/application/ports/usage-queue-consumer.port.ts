@@ -3,6 +3,7 @@ import type { UsageEvent } from '../../domain/types.js';
 export type UsageEventHandler = (event: UsageEvent) => Promise<void>;
 
 export interface UsageQueueConsumerPort {
+  isReady?(): boolean;
   /**
    * Starts the AMQP consumer listening for events on oicunt.usage.events.
    */

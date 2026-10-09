@@ -1,4 +1,5 @@
 import type { IncomingMessage } from 'node:http';
+import { verifyInternalServiceToken } from '../../infrastructure/security/internal-service-token.js';
 import { UsageUnauthorizedError, UsageValidationError } from '../../domain/errors.js';
 import type { RequestContext } from './context.js';
 import { extractHeader } from './context.js';
@@ -32,8 +33,24 @@ export function validateInternalToken(req: IncomingMessage, internalToken?: stri
     providedToken = tokenHeader.trim();
   }
 
-  if (!providedToken || providedToken !== internalToken.trim()) {
+  const claims = providedToken
+    ? verifyInternalServiceToken(providedToken, internalToken.trim())
+    : null;
+  const rawAllowed = process.env['NODE_ENV'] === 'test' && providedToken === internalToken.trim();
+  if (!providedToken || (!claims && !rawAllowed)) {
     throw new UsageUnauthorizedError('Missing or invalid service authorization token');
+  }
+  if (claims) {
+    for (const [header, claim] of [
+      ['x-tenant-id', claims['tenantId']],
+      ['x-user-id', claims['userId']],
+      ['x-request-id', claims['requestId']],
+      ['x-correlation-id', claims['correlationId']],
+    ] as const) {
+      if (claim !== req.headers[header]) {
+        throw new UsageUnauthorizedError('Signed request context mismatch');
+      }
+    }
   }
 }
 

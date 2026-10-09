@@ -54,6 +54,10 @@ export class RabbitMqUsageConsumer implements UsageQueueConsumerPort {
   private isRunning = false;
   private handler: UsageEventHandler | null = null;
 
+  public isReady(): boolean {
+    return this.isRunning && this.connection !== null && this.channel !== null;
+  }
+
   constructor(
     config: RabbitMqUsageConsumerConfig = {},
     customConnection?: AmqpConnectionLike | undefined,

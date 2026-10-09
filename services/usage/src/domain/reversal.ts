@@ -75,6 +75,8 @@ export function createReversalEvent(
       parentEventId: originalEvent.eventId,
     },
     idempotencyKey,
-    occurredAt: new Date().toISOString(),
+    // Corrections belong to the same accounting period as the event they
+    // offset; ingestion time still records when the correction was received.
+    occurredAt: originalEvent.occurredAt,
   };
 }

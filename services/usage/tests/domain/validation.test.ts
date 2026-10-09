@@ -10,7 +10,7 @@ describe('UsageEvent Domain Validation', () => {
     productId: 'billy',
     sourceService: 'model-gateway',
     operation: 'model.completion',
-    resourceId: 'oicunt.model.anthropic.claude-3-5-sonnet',
+    resourceId: 'oicunt.model.catalog-alpha',
     measurements: {
       'tokens.input': 1500,
       'tokens.output': 350,
@@ -20,7 +20,7 @@ describe('UsageEvent Domain Validation', () => {
       'duration.total_ms': 1200,
     },
     dimensions: {
-      provider: 'anthropic',
+      provider: 'test-provider',
       model_tier: 'tier_flagship',
       stream: true,
     },
@@ -40,7 +40,7 @@ describe('UsageEvent Domain Validation', () => {
     expect(result.userId).toBeUndefined();
     expect(result.actorId).toBeUndefined();
     expect(result.measurements['tokens.input']).toBe(1500);
-    expect(result.dimensions['provider']).toBe('anthropic');
+    expect(result.dimensions['provider']).toBe('test-provider');
   });
 
   it('accepts optional genuine userId and actorId', () => {

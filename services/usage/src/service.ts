@@ -23,6 +23,7 @@ import {
   IngestionController,
   QueriesController,
   ReversalsController,
+  AdmissionController,
 } from './interfaces/http/controllers/index.js';
 import { createHttpRouter } from './interfaces/http/router.js';
 import { createUsageConsumerHandler } from './interfaces/amqp/usage-consumer-handler.js';
@@ -167,7 +168,16 @@ export class UsageService {
       ingestionController: this.ingestionController,
       queriesController: this.queriesController,
       reversalsController: this.reversalsController,
+      admissionController: this.dbPool
+        ? new AdmissionController(this.dbPool, {
+            tenantRequestsPerMinute: this.config.tenantRequestsPerMinute,
+            userRequestsPerMinute: this.config.userRequestsPerMinute,
+            tenantConcurrentStreams: this.config.tenantConcurrentStreams,
+            leaseSeconds: this.config.admissionLeaseSeconds,
+          })
+        : undefined,
       dbPool: this.dbPool,
+      queueConsumer: this.queueConsumer,
       internalToken: this.config.internalToken,
       logger: this.logger,
     });

@@ -37,7 +37,7 @@ describe('Domain Aggregation Utilities', () => {
       productId: 'billy',
       sourceService: 'model-gateway',
       operation: 'model.completion',
-      resourceId: 'oicunt.model.claude',
+      resourceId: 'oicunt.model.catalog-alpha',
       measurements: {
         'tokens.input': 1000,
         'tokens.output': 250,

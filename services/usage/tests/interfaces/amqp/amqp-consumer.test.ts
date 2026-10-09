@@ -26,7 +26,7 @@ describe('AMQP Consumer Handler Integration', () => {
     productId: 'billy',
     sourceService: 'model-gateway',
     operation: 'model.completion',
-    resourceId: 'oicunt.model.claude',
+    resourceId: 'oicunt.model.catalog-alpha',
     measurements: { 'tokens.input': 1000 },
     dimensions: {},
     lineage: { correlationId: 'c1', requestId: 'r1' },

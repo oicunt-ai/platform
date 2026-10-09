@@ -15,6 +15,7 @@ export async function handleLiveness(res: ServerResponse): Promise<void> {
 export async function handleReadiness(
   res: ServerResponse,
   dbPool: DatabasePool | null,
+  queueReady = true,
 ): Promise<void> {
   const checks: Record<string, 'up' | 'down'> = {};
   let isReady = true;
@@ -33,6 +34,9 @@ export async function handleReadiness(
   } else {
     checks['database'] = 'up'; // In-memory fallback
   }
+
+  checks['usageQueue'] = queueReady ? 'up' : 'down';
+  if (!queueReady) isReady = false;
 
   const statusCode = isReady ? 200 : 503;
   res.writeHead(statusCode, { 'Content-Type': 'application/json' });

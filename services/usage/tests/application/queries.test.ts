@@ -26,7 +26,7 @@ describe('Usage Query Use Cases', () => {
     productId: 'billy',
     sourceService: 'model-gateway',
     operation: 'model.completion',
-    resourceId: 'oicunt.model.claude',
+    resourceId: 'oicunt.model.catalog-alpha',
     measurements: {
       'tokens.input': 1000,
       'tokens.output': 250,
@@ -103,7 +103,7 @@ describe('Usage Query Use Cases', () => {
   });
 
   it('guarantees resource-specific query correctness for summary and timeseries without returning other resources', async () => {
-    await repo.saveEvent(sampleEvent); // oicunt.model.claude: 1000 input, 250 output
+    await repo.saveEvent(sampleEvent); // oicunt.model.catalog-alpha: 1000 input, 250 output
 
     const secondResourceEvent: UsageEvent = {
       eventId: 'evt-q-2',
@@ -124,16 +124,16 @@ describe('Usage Query Use Cases', () => {
     };
     await repo.saveEvent(secondResourceEvent);
 
-    // 1. Query summary filtered by resourceId 'oicunt.model.claude'
-    const claudeSummary = await summaryUseCase.execute({
+    // 1. Query summary filtered by resourceId 'oicunt.model.catalog-alpha'
+    const modelSummary = await summaryUseCase.execute({
       tenantId: 'tenant-acme',
       startTime: '2026-10-07T00:00:00.000Z',
       endTime: '2026-10-07T23:59:59.999Z',
-      resourceId: 'oicunt.model.claude',
+      resourceId: 'oicunt.model.catalog-alpha',
     });
-    expect(claudeSummary.eventCount).toBe(1);
-    expect(claudeSummary.totals['tokens.input']).toBe(1000);
-    expect(claudeSummary.totals['tokens.output']).toBe(250);
+    expect(modelSummary.eventCount).toBe(1);
+    expect(modelSummary.totals['tokens.input']).toBe(1000);
+    expect(modelSummary.totals['tokens.output']).toBe(250);
 
     // 2. Query summary filtered by resourceId 'oicunt.model.gpt-4'
     const gptSummary = await summaryUseCase.execute({
@@ -156,16 +156,16 @@ describe('Usage Query Use Cases', () => {
     expect(totalSummary.totals['tokens.input']).toBe(4000);
     expect(totalSummary.totals['tokens.output']).toBe(1050);
 
-    // 4. Query timeseries filtered by resourceId 'oicunt.model.claude'
-    const claudeTimeseries = await timeseriesUseCase.execute({
+    // 4. Query timeseries filtered by resourceId 'oicunt.model.catalog-alpha'
+    const modelTimeseries = await timeseriesUseCase.execute({
       tenantId: 'tenant-acme',
       startTime: '2026-10-07T00:00:00.000Z',
       endTime: '2026-10-07T23:59:59.999Z',
       granularity: 'hourly',
-      resourceId: 'oicunt.model.claude',
+      resourceId: 'oicunt.model.catalog-alpha',
     });
-    expect(claudeTimeseries.series).toHaveLength(1);
-    expect(claudeTimeseries.series[0]?.metrics['tokens.input']).toBe(1000);
+    expect(modelTimeseries.series).toHaveLength(1);
+    expect(modelTimeseries.series[0]?.metrics['tokens.input']).toBe(1000);
 
     // 5. Query timeseries across all resources
     const totalTimeseries = await timeseriesUseCase.execute({

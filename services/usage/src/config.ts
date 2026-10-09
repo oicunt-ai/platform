@@ -17,17 +17,22 @@ export interface UsageConfig {
   readonly rabbitmqDlq: string;
   readonly rabbitmqRoutingKeyPattern: string;
   readonly rabbitmqPrefetch: number;
+  readonly tenantRequestsPerMinute: number;
+  readonly userRequestsPerMinute: number;
+  readonly tenantConcurrentStreams: number;
+  readonly admissionLeaseSeconds: number;
 }
 
 export function loadUsageConfig(overrides: Partial<UsageConfig> = {}): UsageConfig {
   const isTest = process.env['NODE_ENV'] === 'test';
 
-  return {
+  const config: UsageConfig = {
     serviceName: overrides.serviceName ?? 'usage',
     port: overrides.port ?? Number.parseInt(process.env['USAGE_SERVICE_PORT'] ?? '8090', 10),
     host: overrides.host ?? process.env['USAGE_SERVICE_HOST'] ?? '0.0.0.0',
     internalToken:
       overrides.internalToken ??
+      process.env['PLATFORM_USAGE_INTERNAL_TOKEN'] ??
       process.env['INTERNAL_SERVICE_TOKEN'] ??
       process.env['USAGE_INTERNAL_TOKEN'],
     database: {
@@ -77,5 +82,36 @@ export function loadUsageConfig(overrides: Partial<UsageConfig> = {}): UsageConf
     rabbitmqPrefetch:
       overrides.rabbitmqPrefetch ??
       Number.parseInt(process.env['USAGE_RABBITMQ_PREFETCH'] ?? '50', 10),
+    tenantRequestsPerMinute:
+      overrides.tenantRequestsPerMinute ??
+      Number.parseInt(process.env['TENANT_REQUESTS_PER_MINUTE'] ?? '120', 10),
+    userRequestsPerMinute:
+      overrides.userRequestsPerMinute ??
+      Number.parseInt(process.env['USER_REQUESTS_PER_MINUTE'] ?? '30', 10),
+    tenantConcurrentStreams:
+      overrides.tenantConcurrentStreams ??
+      Number.parseInt(process.env['TENANT_CONCURRENT_STREAMS'] ?? '20', 10),
+    admissionLeaseSeconds:
+      overrides.admissionLeaseSeconds ??
+      Number.parseInt(process.env['ADMISSION_LEASE_SECONDS'] ?? '300', 10),
   };
+
+  if (process.env['NODE_ENV'] === 'production') {
+    const missing = [
+      ['PLATFORM_USAGE_INTERNAL_TOKEN', config.internalToken],
+      ['DATABASE_HOST', config.database.host],
+      ['DATABASE_USER', config.database.user],
+      ['DATABASE_PASSWORD', config.database.password],
+      ['RABBITMQ_URL', config.rabbitmqUrl],
+    ].filter(([, value]) => !value || value.trim().length === 0);
+    if (!config.useDatabase) missing.push(['USE_DATABASE', 'true']);
+    if (!config.useRabbitMq) missing.push(['USE_RABBITMQ', 'true']);
+    if (missing.length > 0) {
+      throw new Error(
+        `Usage production configuration is incomplete: ${missing.map(([name]) => name).join(', ')}`,
+      );
+    }
+  }
+
+  return config;
 }

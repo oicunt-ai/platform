@@ -27,7 +27,7 @@ describe('CreateReversalUseCase & RecomputeAggregatesUseCase', () => {
     productId: 'billy',
     sourceService: 'model-gateway',
     operation: 'model.completion',
-    resourceId: 'oicunt.model.claude',
+    resourceId: 'oicunt.model.catalog-alpha',
     measurements: {
       'tokens.input': 2000,
       'tokens.output': 500,

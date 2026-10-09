@@ -12,6 +12,10 @@ export class InMemoryUsageQueue implements UsageQueueConsumerPort {
   public readonly requeued: unknown[] = [];
   private isRunning = false;
 
+  public isReady(): boolean {
+    return this.isRunning;
+  }
+
   public registerHandler(handler: UsageEventHandler): void {
     this.handler = handler;
   }
