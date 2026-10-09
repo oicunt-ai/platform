@@ -77,6 +77,32 @@ function makePostRequest(
   });
 }
 
+function makeGetRequest(
+  port: number,
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<TestResponse> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { hostname: '127.0.0.1', port, path, method: 'GET', headers },
+      (res) => {
+        let rawData = '';
+        res.on('data', (chunk) => (rawData += chunk));
+        res.on('end', () =>
+          resolve({
+            statusCode: res.statusCode ?? 500,
+            headers: res.headers,
+            body: JSON.parse(rawData) as TestResponse['body'],
+            rawText: rawData,
+          }),
+        );
+      },
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 describe('API Gateway - AI Completions Ingress Integration Tests', () => {
   const jwtCtx = createTestJwtContext('gw-comp-key');
   let gatewayService: GatewayServiceInstance;
@@ -104,6 +130,28 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
           lastOrchestratorRequestBody = JSON.parse(bodyData) as Record<string, unknown>;
         } catch {
           lastOrchestratorRequestBody = null;
+        }
+
+        if (req.url === '/internal/v1/orchestrator/catalog') {
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(
+            JSON.stringify({
+              success: true,
+              data: [
+                {
+                  id: 'oicunt.model.catalog-alpha',
+                  displayName: 'General',
+                  description: 'General assistant',
+                  family: 'general',
+                  capabilities: { streaming: true, tools: false },
+                  status: 'available',
+                  pricing: { costPerMillionInputTokens: 1 },
+                  targets: [{ provider: 'test-provider', upstreamModelId: 'secret-upstream' }],
+                },
+              ],
+            }),
+          );
+          return;
         }
 
         if (orchestratorMode === 'stream') {
@@ -188,7 +236,7 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
 
   const validAiPayload = {
     conversationId: 'conv_session_101',
-    model: 'oicunt.model.general',
+    model: 'oicunt.model.catalog-alpha',
     messages: [{ role: 'user', content: 'What is the speed of light?' }],
   };
 
@@ -240,7 +288,7 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
 
     const invalidPayload = {
       conversationId: 'conv_1',
-      model: 'raw-claude-3-5', // Invalid canonical model name
+      model: '',
       messages: [{ role: 'user', content: 'hello' }],
     };
 
@@ -344,6 +392,37 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
     expect(lastOrchestratorRequestHeaders?.['x-request-id']).toBe(res.headers['x-request-id']);
   });
 
+  it('projects the model catalog to safe public canonical metadata', async () => {
+    const token = signTestJwt(
+      {
+        sub: 'usr_catalog',
+        tenant_id: 'tnt_catalog',
+        iss: 'https://auth.oicunt.internal',
+        aud: 'oicunt-platform',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'ai:use',
+      },
+      jwtCtx.privateKey,
+      { kid: 'gw-comp-key' },
+    );
+
+    const response = await makeGetRequest(gatewayPort, '/api/v1/ai/models', {
+      Authorization: `Bearer ${token}`,
+    });
+    expect(response.statusCode).toBe(200);
+    const models = response.body.data as unknown as Array<Record<string, unknown>>;
+    expect(models[0]).toEqual({
+      id: 'oicunt.model.catalog-alpha',
+      displayName: 'General',
+      description: 'General assistant',
+      capabilities: ['streaming'],
+      status: 'available',
+    });
+    expect(response.rawText).not.toContain('test-provider');
+    expect(response.rawText).not.toContain('upstreamModelId');
+    expect(response.rawText).not.toContain('pricing');
+  });
+
   it('returns 502 Bad Gateway when downstream orchestrator is unreachable', async () => {
     // Configure gateway pointing at a dead port
     const unreachableConfig = loadServiceConfig({
@@ -391,11 +470,11 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
     }
   });
 
-  it('accepts and forwards canonical model claude-sonnet to orchestrator', async () => {
+  it('accepts and forwards canonical model oicunt.model.catalog-alpha to orchestrator', async () => {
     const token = signTestJwt(
       {
-        sub: 'usr_claude_user',
-        tenant_id: 'tnt_claude_tenant',
+        sub: 'usr_catalog_user',
+        tenant_id: 'tnt_catalog_tenant',
         iss: 'https://auth.oicunt.internal',
         aud: 'oicunt-platform',
         exp: Math.floor(Date.now() / 1000) + 3600,
@@ -409,21 +488,21 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
       gatewayPort,
       '/api/v1/ai/completions',
       {
-        conversationId: 'conv-claude-test',
-        model: 'claude-sonnet',
+        conversationId: 'conv-catalog-test',
+        model: 'oicunt.model.catalog-alpha',
         messages: [{ role: 'user', content: 'Explain quantum computing in one sentence.' }],
       },
       {
         Authorization: `Bearer ${token}`,
-        'X-Correlation-ID': 'corr-claude-sonnet-1',
+        'X-Correlation-ID': 'corr-oicunt.model.catalog-alpha-1',
       },
     );
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
     expect(lastOrchestratorRequestBody).toBeDefined();
-    expect(lastOrchestratorRequestBody?.['model']).toBe('claude-sonnet');
-    expect(lastOrchestratorRequestHeaders?.['x-user-id']).toBe('usr_claude_user');
-    expect(lastOrchestratorRequestHeaders?.['x-tenant-id']).toBe('tnt_claude_tenant');
+    expect(lastOrchestratorRequestBody?.['model']).toBe('oicunt.model.catalog-alpha');
+    expect(lastOrchestratorRequestHeaders?.['x-user-id']).toBe('usr_catalog_user');
+    expect(lastOrchestratorRequestHeaders?.['x-tenant-id']).toBe('tnt_catalog_tenant');
   });
 });

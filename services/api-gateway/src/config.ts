@@ -15,6 +15,10 @@ export interface GatewayConfig extends BaseServiceConfig {
   readonly clockSkewSeconds: number;
   readonly orchestratorBaseUrl: string;
   readonly internalServiceSecret?: string | undefined;
+  readonly orchestratorInternalSecret?: string | undefined;
+  readonly usageInternalSecret?: string | undefined;
+  readonly usageBaseUrl: string;
+  readonly enableUsageAdmission?: boolean | undefined;
 }
 
 export function loadServiceConfig(overrides?: Partial<GatewayConfig>): GatewayConfig {
@@ -41,6 +45,16 @@ export function loadServiceConfig(overrides?: Partial<GatewayConfig>): GatewayCo
     overrides?.internalServiceSecret ??
     process.env['INTERNAL_SERVICE_SECRET'] ??
     process.env['INTERNAL_SERVICE_TOKEN'];
+  const orchestratorInternalSecret =
+    overrides?.orchestratorInternalSecret ??
+    process.env['AI_ORCHESTRATOR_INTERNAL_TOKEN'] ??
+    (env === 'production' ? undefined : internalServiceSecret);
+  const usageInternalSecret =
+    overrides?.usageInternalSecret ??
+    process.env['PLATFORM_USAGE_INTERNAL_TOKEN'] ??
+    (env === 'production' ? undefined : internalServiceSecret);
+  const usageBaseUrl =
+    overrides?.usageBaseUrl ?? process.env['USAGE_BASE_URL'] ?? 'http://localhost:8090';
 
   const base = createBaseConfig(overrides?.serviceName ?? 'api-gateway', {
     environment: env,
@@ -49,7 +63,7 @@ export function loadServiceConfig(overrides?: Partial<GatewayConfig>): GatewayCo
     version: overrides?.version ?? '0.1.0',
   });
 
-  return {
+  const config: GatewayConfig = {
     ...base,
     shutdownTimeoutMs: Number.isNaN(shutdownTimeoutMs) ? 5000 : shutdownTimeoutMs,
     enableMetrics,
@@ -60,5 +74,31 @@ export function loadServiceConfig(overrides?: Partial<GatewayConfig>): GatewayCo
     clockSkewSeconds: Number.isNaN(clockSkewSeconds) ? 60 : clockSkewSeconds,
     orchestratorBaseUrl,
     internalServiceSecret,
+    orchestratorInternalSecret,
+    usageInternalSecret,
+    usageBaseUrl,
+    enableUsageAdmission:
+      overrides?.enableUsageAdmission ??
+      (env === 'production' || process.env['ENABLE_USAGE_ADMISSION'] === 'true'),
   };
+
+  if (env === 'production') {
+    const missing = [
+      ['JWKS_URI', config.jwksUri],
+      ['JWT_ISSUER', config.jwtIssuer],
+      ['JWT_AUDIENCE', config.jwtAudience],
+      ['AI_ORCHESTRATOR_INTERNAL_TOKEN', config.orchestratorInternalSecret],
+      ['PLATFORM_USAGE_INTERNAL_TOKEN', config.usageInternalSecret],
+      ['ORCHESTRATOR_BASE_URL', config.orchestratorBaseUrl],
+      ['USAGE_BASE_URL', config.usageBaseUrl],
+    ].filter(([, value]) => !value || value.trim().length === 0);
+
+    if (missing.length > 0) {
+      throw new Error(
+        `API Gateway production configuration is incomplete: ${missing.map(([name]) => name).join(', ')}`,
+      );
+    }
+  }
+
+  return config;
 }

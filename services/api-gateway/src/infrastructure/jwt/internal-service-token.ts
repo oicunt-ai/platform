@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 export interface InternalServiceTokenClaims {
   readonly iss: string;
@@ -6,6 +6,11 @@ export interface InternalServiceTokenClaims {
   readonly aud: string;
   readonly exp: number;
   readonly iat: number;
+  readonly jti: string;
+  readonly tenantId?: string | undefined;
+  readonly userId?: string | undefined;
+  readonly requestId?: string | undefined;
+  readonly correlationId?: string | undefined;
   readonly [key: string]: unknown;
 }
 
@@ -16,6 +21,10 @@ export interface CreateInternalServiceTokenParams {
   readonly audience: string;
   readonly secret: string;
   readonly expiresInSeconds?: number | undefined;
+  readonly tenantId?: string | undefined;
+  readonly userId?: string | undefined;
+  readonly requestId?: string | undefined;
+  readonly correlationId?: string | undefined;
 }
 
 export interface VerifyInternalServiceTokenOptions {
@@ -52,6 +61,11 @@ export function createInternalServiceToken(params: CreateInternalServiceTokenPar
     aud: params.audience,
     iat: now,
     exp,
+    jti: randomUUID(),
+    tenantId: params.tenantId,
+    userId: params.userId,
+    requestId: params.requestId,
+    correlationId: params.correlationId,
   };
 
   const headerB64 = Buffer.from(JSON.stringify(header), 'utf8').toString('base64url');

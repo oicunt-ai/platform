@@ -27,6 +27,17 @@ export class HttpOrchestratorClient implements OrchestratorClientPort {
     this.internalServiceSecret = options.internalServiceSecret;
   }
 
+  async checkHealth(): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/health/readiness`, {
+        signal: AbortSignal.timeout(Math.min(this.timeoutMs, 5000)),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async forwardCompletion(request: ForwardCompletionRequest): Promise<ForwardCompletionResponse> {
     const targetUrl = new URL(`${this.baseUrl}/internal/v1/orchestrator/chat`);
     const isHttps = targetUrl.protocol === 'https:';
@@ -56,6 +67,10 @@ export class HttpOrchestratorClient implements OrchestratorClientPort {
         audience: 'ai-orchestrator',
         secret: this.internalServiceSecret,
         expiresInSeconds: 300,
+        tenantId: request.tenantId,
+        userId: request.userId,
+        requestId: request.requestId,
+        correlationId: request.correlationId,
       });
       headers['Authorization'] = `Bearer ${token}`;
     }
@@ -133,6 +148,72 @@ export class HttpOrchestratorClient implements OrchestratorClientPort {
       });
 
       clientReq.write(payloadBuffer);
+      clientReq.end();
+    });
+  }
+
+  async forwardResource(request: {
+    readonly method: 'GET' | 'POST';
+    readonly path: string;
+    readonly requestId: string;
+    readonly correlationId: string;
+    readonly userId: string;
+    readonly tenantId: string;
+    readonly body?: unknown;
+    readonly signal?: AbortSignal;
+  }): Promise<ForwardCompletionResponse> {
+    const targetUrl = new URL(`${this.baseUrl}${request.path}`);
+    const requester = targetUrl.protocol === 'https:' ? https.request : http.request;
+    const payload =
+      request.body === undefined ? undefined : Buffer.from(JSON.stringify(request.body));
+    const headers: Record<string, string | number> = {
+      Accept: 'application/json',
+      'X-Request-ID': request.requestId,
+      'X-Correlation-ID': request.correlationId,
+      'X-User-ID': request.userId,
+      'X-Tenant-ID': request.tenantId,
+      'X-Service-Name': 'api-gateway',
+    };
+    if (payload) {
+      headers['Content-Type'] = 'application/json';
+      headers['Content-Length'] = payload.length;
+    }
+    if (this.internalServiceSecret) {
+      headers['Authorization'] = `Bearer ${createInternalServiceToken({
+        issuer: 'api-gateway',
+        audience: 'ai-orchestrator',
+        secret: this.internalServiceSecret,
+        tenantId: request.tenantId,
+        userId: request.userId,
+        requestId: request.requestId,
+        correlationId: request.correlationId,
+      })}`;
+    }
+
+    return new Promise((resolve, reject) => {
+      const clientReq = requester(
+        targetUrl,
+        { method: request.method, headers, signal: request.signal, timeout: this.timeoutMs },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            const raw = Buffer.concat(chunks).toString('utf8');
+            try {
+              resolve({
+                statusCode: res.statusCode ?? 502,
+                headers: res.headers,
+                bodyData: JSON.parse(raw),
+              });
+            } catch {
+              resolve({ statusCode: res.statusCode ?? 502, headers: res.headers, bodyData: raw });
+            }
+          });
+        },
+      );
+      clientReq.on('timeout', () => clientReq.destroy(new Error('Orchestrator request timed out')));
+      clientReq.on('error', (error) => reject(new BadGatewayError(error.message)));
+      if (payload) clientReq.write(payload);
       clientReq.end();
     });
   }

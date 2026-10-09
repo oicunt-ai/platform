@@ -80,7 +80,17 @@ describe('API Gateway - Health & Probe Integration Tests', () => {
       host: '127.0.0.1',
     });
 
-    service = new GatewayServiceInstance({ config });
+    service = new GatewayServiceInstance({
+      config,
+      orchestratorClient: {
+        async checkHealth() {
+          return true;
+        },
+        async forwardCompletion() {
+          throw new Error('not used by health tests');
+        },
+      },
+    });
     boundPort = await service.start();
   });
 

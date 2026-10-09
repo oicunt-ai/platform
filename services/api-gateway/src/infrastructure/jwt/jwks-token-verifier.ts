@@ -194,10 +194,12 @@ export class JwksTokenVerifier implements TokenVerifierPort {
     }
 
     // Tenant (tenantId)
-    const rawTenantId = claims.tenant_id ?? claims.tenantId;
+    // tenant_id is the sole public identity contract. The historical tenantId
+    // alias is intentionally rejected so a token has exactly one authority.
+    const rawTenantId = claims.tenant_id;
     if (!rawTenantId || typeof rawTenantId !== 'string' || rawTenantId.trim().length === 0) {
       throw new AuthenticationError(
-        "JWT is missing required tenant identifier claim ('tenant_id' or 'tenantId')",
+        "JWT is missing required tenant identifier claim ('tenant_id')",
       );
     }
 

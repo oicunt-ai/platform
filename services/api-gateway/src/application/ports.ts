@@ -12,3 +12,4 @@ export interface EventPublisherPort {
 
 export * from './ports/token-verifier.port.js';
 export * from './ports/orchestrator-client.port.js';
+export * from './ports/usage-admission.port.js';

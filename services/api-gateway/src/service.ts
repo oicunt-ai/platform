@@ -9,10 +9,20 @@ import {
   ForwardCompletionUseCase,
   type TokenVerifierPort,
   type OrchestratorClientPort,
+  type UsageAdmissionPort,
 } from './application/index.js';
 import { loadServiceConfig, type GatewayConfig } from './config.js';
-import { JwksTokenVerifier, HttpOrchestratorClient } from './infrastructure/index.js';
-import { createHttpRouter, ContextController, CompletionController } from './interfaces/index.js';
+import {
+  JwksTokenVerifier,
+  HttpOrchestratorClient,
+  HttpUsageAdmissionClient,
+} from './infrastructure/index.js';
+import {
+  createHttpRouter,
+  ContextController,
+  CompletionController,
+  ResourcesController,
+} from './interfaces/index.js';
 
 export interface GatewayServiceDependencies {
   readonly config?: GatewayConfig;
@@ -20,6 +30,7 @@ export interface GatewayServiceDependencies {
   readonly tracer?: Tracer;
   readonly tokenVerifier?: TokenVerifierPort;
   readonly orchestratorClient?: OrchestratorClientPort;
+  readonly usageAdmissionClient?: UsageAdmissionPort;
 }
 
 export class GatewayServiceInstance {
@@ -28,6 +39,7 @@ export class GatewayServiceInstance {
   private readonly tracer: Tracer;
   private readonly tokenVerifier: TokenVerifierPort;
   private readonly orchestratorClient: OrchestratorClientPort;
+  private readonly usageAdmissionClient: UsageAdmissionPort | undefined;
   private server: Server | null = null;
   private ready = false;
 
@@ -49,8 +61,13 @@ export class GatewayServiceInstance {
       dependencies.orchestratorClient ??
       new HttpOrchestratorClient({
         orchestratorBaseUrl: this.config.orchestratorBaseUrl,
-        internalServiceSecret: this.config.internalServiceSecret,
+        internalServiceSecret: this.config.orchestratorInternalSecret,
       });
+    this.usageAdmissionClient =
+      dependencies.usageAdmissionClient ??
+      (this.config.enableUsageAdmission
+        ? new HttpUsageAdmissionClient(this.config.usageBaseUrl, this.config.usageInternalSecret)
+        : undefined);
   }
 
   getConfig(): GatewayConfig {
@@ -76,16 +93,27 @@ export class GatewayServiceInstance {
     const completionController = new CompletionController(
       authenticateUseCase,
       forwardCompletionUseCase,
+      this.config.enableUsageAdmission ? this.usageAdmissionClient : undefined,
     );
 
     const router = createHttpRouter({
       serviceName: this.config.serviceName,
       version: this.config.version,
-      isReady: () => this.ready,
+      isReady: async () => {
+        if (!this.ready) return false;
+        const [orchestratorReady, usageReady] = await Promise.all([
+          this.orchestratorClient.checkHealth?.() ?? Promise.resolve(true),
+          this.config.enableUsageAdmission
+            ? (this.usageAdmissionClient?.checkHealth?.() ?? Promise.resolve(false))
+            : Promise.resolve(true),
+        ]);
+        return orchestratorReady && usageReady;
+      },
       logger: this.logger,
       tracer: this.tracer,
       contextController,
       completionController,
+      resourcesController: new ResourcesController(authenticateUseCase, this.orchestratorClient),
     });
 
     this.server = createServer((req, res) => {
@@ -134,13 +162,16 @@ export class GatewayServiceInstance {
       return;
     }
 
+    const server = this.server;
+
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
+        server.closeAllConnections();
         this.logger.warn(`Forced shutdown after ${this.config.shutdownTimeoutMs}ms timeout`);
         resolve();
       }, this.config.shutdownTimeoutMs);
 
-      this.server?.close((err) => {
+      server.close((err) => {
         clearTimeout(timeout);
         this.server = null;
         if (err) {
@@ -151,6 +182,8 @@ export class GatewayServiceInstance {
           resolve();
         }
       });
+      server.closeIdleConnections();
+      server.closeAllConnections();
     });
   }
 }

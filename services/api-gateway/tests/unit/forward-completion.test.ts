@@ -23,7 +23,7 @@ describe('ForwardCompletionUseCase - Unit Tests', () => {
 
   const validAiPayload = {
     conversationId: 'conv_123',
-    model: 'oicunt.model.general',
+    model: 'oicunt.model.catalog-alpha',
     messages: [{ role: 'user', content: 'Hello AI' }],
   };
 
@@ -101,7 +101,7 @@ describe('ForwardCompletionUseCase - Unit Tests', () => {
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(ValidationError);
       expect(result.error.statusCode).toBe(400);
-      expect(result.error.message).toMatch(/Field 'stream' must be a boolean/);
+      expect(result.error.message).toMatch(/stream must be a boolean/);
     }
     expect(called).toBe(false);
   });
@@ -128,11 +128,11 @@ describe('ForwardCompletionUseCase - Unit Tests', () => {
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(ValidationError);
       expect(result.error.statusCode).toBe(400);
-      expect((result.error as ValidationError).field).toBe('conversationId');
+      expect(result.error.message).toMatch(/conversationId/);
     }
   });
 
-  it('should validate canonical model name pattern', async () => {
+  it('should defer canonical model authority to the Model Registry', async () => {
     const mockClient: OrchestratorClientPort = {
       async forwardCompletion() {
         return { statusCode: 200, headers: {} };
@@ -141,22 +141,19 @@ describe('ForwardCompletionUseCase - Unit Tests', () => {
 
     const useCase = new ForwardCompletionUseCase(mockClient);
 
-    // Provider raw model name should be rejected by the gateway
+    // The gateway validates the OICUNT namespace; the Registry authoritatively
+    // accepts or rejects the individual catalog entry.
     const result = await useCase.execute({
       identity: validIdentityWithAiUse,
       requestId: 'req-1',
       correlationId: 'corr-1',
       body: {
         ...validAiPayload,
-        model: 'gpt-4o',
+        model: 'oicunt.model.unregistered-catalog-entry',
       },
     });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toBeInstanceOf(ValidationError);
-      expect(result.error.message).toMatch(/canonical pattern/);
-    }
+    expect(result.ok).toBe(true);
   });
 
   it('should validate messages array', async () => {

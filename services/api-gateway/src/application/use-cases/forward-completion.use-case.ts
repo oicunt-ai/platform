@@ -1,4 +1,4 @@
-import { type Result, ok, err } from '@oicunt/contracts';
+import { type Result, ok, err, validateCreateCompletionRequest } from '@oicunt/contracts';
 import {
   type DomainError,
   type IdentityContext,
@@ -63,68 +63,7 @@ export class ForwardCompletionUseCase {
   }
 
   private validatePayload(body: unknown): ValidationError | null {
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      return new ValidationError('Request body must be a valid JSON object');
-    }
-
-    const rec = body as Record<string, unknown>;
-
-    if ('stream' in rec && typeof rec['stream'] !== 'boolean') {
-      return new ValidationError("Field 'stream' must be a boolean", 'stream');
-    }
-
-    // conversationId
-    if (typeof rec['conversationId'] !== 'string' || rec['conversationId'].trim().length === 0) {
-      return new ValidationError(
-        "Field 'conversationId' is required and must be a non-empty string",
-        'conversationId',
-      );
-    }
-
-    // model
-    if (typeof rec['model'] !== 'string' || rec['model'].trim().length === 0) {
-      return new ValidationError(
-        "Field 'model' is required and must be a non-empty string",
-        'model',
-      );
-    }
-
-    const modelRegex = /^(oicunt\.model\.[a-z0-9_-]+|claude-sonnet)$/;
-    if (!modelRegex.test(rec['model'].trim())) {
-      return new ValidationError(
-        `Field 'model' must follow canonical pattern 'oicunt.model.<tier>' or 'claude-sonnet', received '${rec['model']}'`,
-        'model',
-      );
-    }
-
-    // messages
-    if (!Array.isArray(rec['messages']) || rec['messages'].length === 0) {
-      return new ValidationError(
-        "Field 'messages' is required and must be a non-empty array",
-        'messages',
-      );
-    }
-
-    const validRoles = new Set(['system', 'user', 'assistant']);
-    for (let i = 0; i < rec['messages'].length; i++) {
-      const msg = rec['messages'][i];
-      if (!msg || typeof msg !== 'object') {
-        return new ValidationError(`Message at index ${i} must be an object`, `messages[${i}]`);
-      }
-      if (typeof msg.role !== 'string' || !validRoles.has(msg.role)) {
-        return new ValidationError(
-          `Message at index ${i} has invalid role '${msg.role}'. Must be 'system', 'user', or 'assistant'`,
-          `messages[${i}].role`,
-        );
-      }
-      if (typeof msg.content !== 'string' || msg.content.trim().length === 0) {
-        return new ValidationError(
-          `Message at index ${i} must have non-empty content`,
-          `messages[${i}].content`,
-        );
-      }
-    }
-
-    return null;
+    const errors = validateCreateCompletionRequest(body);
+    return errors.length > 0 ? new ValidationError(errors.join('; ')) : null;
   }
 }

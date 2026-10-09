@@ -73,3 +73,13 @@ export class GatewayTimeoutError extends DomainError {
     super(message);
   }
 }
+
+export class RateLimitedError extends DomainError {
+  public readonly code: string;
+  public readonly statusCode = 429;
+
+  constructor(message = 'Request limit reached', code = 'RATE_LIMITED') {
+    super(message);
+    this.code = code;
+  }
+}

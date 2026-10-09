@@ -33,7 +33,7 @@ describe('JwksTokenVerifier - Unit Tests', () => {
     expect(identity.roles).toEqual(['engineer']);
   });
 
-  it('should accept tenantId claim alternative to tenant_id', async () => {
+  it('should reject the non-authoritative tenantId claim alias', async () => {
     const verifier = new JwksTokenVerifier({
       staticJwks: jwtCtx.jwks,
     });
@@ -45,10 +45,7 @@ describe('JwksTokenVerifier - Unit Tests', () => {
     };
 
     const token = signTestJwt(claims, jwtCtx.privateKey, { kid: 'key-alpha' });
-    const identity = await verifier.verifyToken(token);
-
-    expect(identity.userId).toBe('user-789');
-    expect(identity.tenantId).toBe('tenant-camel-case');
+    await expect(verifier.verifyToken(token)).rejects.toThrow(/tenant_id/);
   });
 
   it('should accept audience as array of strings', async () => {

@@ -4,17 +4,19 @@ import type { Logger } from '@oicunt/logging';
 import type { Tracer } from '@oicunt/observability';
 import type { ContextController } from './controllers/context.controller.js';
 import type { CompletionController } from './controllers/completion.controller.js';
+import type { ResourcesController } from './controllers/resources.controller.js';
 import { sendLivenessResponse, sendReadinessResponse } from './health.js';
 import { createGatewayRequestContext, handleHttpError } from './middleware.js';
 
 export interface RouterOptions {
   readonly serviceName: string;
   readonly version: string;
-  readonly isReady: () => boolean;
+  readonly isReady: () => boolean | Promise<boolean>;
   readonly logger: Logger;
   readonly tracer: Tracer;
   readonly contextController: ContextController;
   readonly completionController: CompletionController;
+  readonly resourcesController: ResourcesController;
 }
 
 export function createHttpRouter(options: RouterOptions) {
@@ -35,7 +37,7 @@ export function createHttpRouter(options: RouterOptions) {
       }
 
       if (method === 'GET' && (pathname === '/readyz' || pathname === '/health/readiness')) {
-        sendReadinessResponse(res, options.isReady(), options.serviceName, options.version);
+        sendReadinessResponse(res, await options.isReady(), options.serviceName, options.version);
         return;
       }
 
@@ -62,6 +64,37 @@ export function createHttpRouter(options: RouterOptions) {
         await options.tracer.withSpan('gateway.get_context', async () => {
           await options.contextController.handleGetContext(req, res, context);
         });
+        return;
+      }
+
+      if (method === 'GET' && pathname === '/api/v1/ai/models') {
+        await options.resourcesController.handle(
+          req,
+          res,
+          context,
+          '/internal/v1/orchestrator/catalog',
+        );
+        return;
+      }
+
+      if (pathname === '/api/v1/ai/conversations' && (method === 'GET' || method === 'POST')) {
+        await options.resourcesController.handle(
+          req,
+          res,
+          context,
+          '/internal/v1/orchestrator/conversations',
+        );
+        return;
+      }
+
+      const messagesMatch = pathname.match(/^\/api\/v1\/ai\/conversations\/([^/]+)\/messages$/);
+      if (method === 'GET' && messagesMatch?.[1]) {
+        await options.resourcesController.handle(
+          req,
+          res,
+          context,
+          `/internal/v1/orchestrator/conversations/${encodeURIComponent(decodeURIComponent(messagesMatch[1]))}/messages`,
+        );
         return;
       }
 
