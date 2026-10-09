@@ -70,9 +70,12 @@ export class AdmissionController {
       res,
       201,
       {
-        allowed: true,
-        leaseId: body.stream ? leaseId : null,
-        retryAfter: retryAfterSeconds,
+        success: true,
+        data: {
+          allowed: true,
+          leaseId: body.stream ? leaseId : null,
+          retryAfter: retryAfterSeconds,
+        },
       },
       context,
     );
@@ -104,7 +107,7 @@ export class AdmissionController {
       'DELETE FROM oicunt_usage.admission_leases WHERE id = $1 AND tenant_id = $2',
       [body.leaseId, body.tenantId],
     );
-    sendJsonResponse(res, 200, { released: true }, context);
+    sendJsonResponse(res, 200, { success: true, data: { released: true } }, context);
   }
 
   /**

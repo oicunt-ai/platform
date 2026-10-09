@@ -174,11 +174,11 @@ describe('Usage Admission Lease Ownership', () => {
       body: JSON.stringify({ tenantId, userId, stream: true }),
     });
     const body = (await res.json()) as {
-      allowed?: boolean;
-      leaseId?: string | null;
+      success: boolean;
+      data?: { allowed: boolean; leaseId: string | null };
       error?: { code: string; message: string };
     };
-    return { status: res.status, leaseId: body.leaseId };
+    return { status: res.status, leaseId: body.data?.leaseId };
   }
 
   async function release(
@@ -192,10 +192,11 @@ describe('Usage Admission Lease Ownership', () => {
       body: JSON.stringify(input),
     });
     const body = (await res.json()) as {
-      released?: boolean;
+      success: boolean;
+      data?: { released: boolean };
       error?: { code: string };
     };
-    return { status: res.status, code: body.error?.code, released: body.released };
+    return { status: res.status, code: body.error?.code, released: body.data?.released };
   }
 
   beforeAll(async () => {
@@ -230,6 +231,24 @@ describe('Usage Admission Lease Ownership', () => {
     const acquired = await acquire(tenant, owner, 'corr-owner-ok');
     expect(acquired.status).toBe(201);
     expect(acquired.leaseId).toMatch(/^adm_/);
+
+    // Cross-boundary contract: the Gateway client reads response.data.
+    const rawAcquire = (await (
+      await fetch(`${baseUrl}/internal/v1/usage/admissions`, {
+        method: 'POST',
+        headers: signedHeaders({ tenantId: tenant, userId: owner, correlationId: 'corr-envelope' }),
+        body: JSON.stringify({ tenantId: tenant, userId: owner, stream: true }),
+      })
+    ).json()) as { success: boolean; data: { allowed: boolean; leaseId: string | null } };
+    expect(rawAcquire.success).toBe(true);
+    expect(rawAcquire.data.allowed).toBe(true);
+    expect(rawAcquire.data.leaseId).toMatch(/^adm_/);
+    const probeCleanup = await release(
+      { leaseId: rawAcquire.data.leaseId!, tenantId: tenant, userId: owner },
+      { tenantId: tenant, userId: owner },
+      'corr-envelope-cleanup',
+    );
+    expect(probeCleanup.status).toBe(200);
 
     const result = await release(
       { leaseId: acquired.leaseId!, tenantId: tenant, userId: owner },
