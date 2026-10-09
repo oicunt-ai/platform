@@ -88,7 +88,7 @@ export interface UsageEvent {
 
   /**
    * Canonical platform resource identifier associated with the consumption.
-   * Canonical model ID (e.g. 'oicunt.model.anthropic.claude-3-5-sonnet'),
+   * Canonical model ID (e.g. 'oicunt.model.catalog-alpha'),
    * Canonical tool ID (e.g. 'oicunt.tool.code-sandbox'),
    * or Agent ID (e.g. 'agent_researcher_v2').
    */

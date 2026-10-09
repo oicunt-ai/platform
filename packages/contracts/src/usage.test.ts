@@ -23,7 +23,7 @@ describe('Usage Contracts', () => {
       operation: 'chat.completion',
       resourceId: 'conv-123',
       measurements: aiMeasurements,
-      dimensions: { model: 'oicunt.model.general', provider: 'anthropic' },
+      dimensions: { model: 'oicunt.model.catalog-alpha', provider: 'test-provider' },
       lineage: { correlationId: 'c-1', requestId: 'r-1' },
       idempotencyKey: 'idemp-ai-1',
       occurredAt: '2026-10-07T12:00:00.000Z',

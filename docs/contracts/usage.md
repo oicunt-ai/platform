@@ -176,8 +176,8 @@ Dimensions are string key-value pairs used for categorization, querying, aggrega
 
 Common dimension keys:
 
-- `model`: Canonical model identifier (e.g. `oicunt.model.general`, `oicunt.model.reasoning`).
-- `provider`: Resolved execution provider (e.g. `anthropic`, `openai`, `vertex-ai`).
+- `model`: Canonical model identifier (e.g. `oicunt.model.catalog-alpha`, `oicunt.model.catalog-gamma`).
+- `provider`: Resolved execution provider (e.g. `test-provider`, `openai`, `vertex-ai`).
 - `pricingTier`: Contract tier (e.g. `enterprise`, `standard`, `free`).
 - `feature`: Specific application capability (e.g. `code-review`, `chat`, `semantic-search`).
 - `environment`: Deployment tier (`production`, `staging`).
@@ -232,8 +232,8 @@ The Platform Usage service supports both synchronous HTTP ingestion and asynchro
     "duration.ms": 1420
   },
   "dimensions": {
-    "model": "oicunt.model.general",
-    "provider": "anthropic",
+    "model": "oicunt.model.catalog-alpha",
+    "provider": "test-provider",
     "feature": "billy-chat"
   },
   "lineage": {
@@ -384,8 +384,8 @@ Rollups track:
     },
     "byDimension": {
       "model": {
-        "oicunt.model.general": { "tokens.total": 1200000 },
-        "oicunt.model.reasoning": { "tokens.total": 600000 }
+        "oicunt.model.catalog-alpha": { "tokens.total": 1200000 },
+        "oicunt.model.catalog-gamma": { "tokens.total": 600000 }
       }
     }
   }

@@ -49,12 +49,12 @@ sequenceDiagram
     participant MGW as Model Gateway
     participant Provider as Model Provider (Upstream)
 
-    User->>BILLY: Inputs prompt & selects model (e.g. claude-sonnet)
+    User->>BILLY: Inputs prompt & selects model (e.g. oicunt.model.catalog-alpha)
     BILLY->>APIGW: POST /api/v1/ai/completions (Normalized Request + Bearer Token + optional X-Correlation-ID)
     Note over APIGW: 1. Authenticates User Token<br/>2. Strips untrusted client identity headers<br/>3. Authoritatively generates X-Request-ID<br/>4. Adopts or generates X-Correlation-ID<br/>5. Injects trusted X-User-ID & X-Tenant-ID
     APIGW->>Orch: POST /internal/v1/orchestrator/chat (Authenticated Service-to-Service)
     Note over Orch: Validates conversation structure<br/>Initiates orchestration span
-    Orch->>Reg: GET /internal/v1/models/resolve/claude-sonnet (Resolve Model)
+    Orch->>Reg: GET /internal/v1/models/resolve/oicunt.model.catalog-alpha (Resolve Model)
     Reg-->>Orch: 200 OK (Resolved Model Spec: Provider, Model Target, Limits)
     Orch->>Inf: POST /internal/v1/inference/execute (Prompt/Context + Resolution)
     Note over Inf: Coordinates runtime inference execution<br/>Applies inference lifecycle policies
@@ -79,7 +79,7 @@ Every service and engineer working on the OICUNT AI platform must strictly enfor
 1. **BILLY never calls an LLM provider directly**: BILLY only communicates with the OICUNT API Gateway over authenticated, normalized platform endpoints.
 2. **Provider-specific APIs never leak into BILLY**: BILLY has zero knowledge of upstream provider parameter names, response schemas, error codes, or SDKs.
 3. **Provider-specific APIs never leak into the AI Orchestrator**: The Orchestrator operates exclusively on OICUNT normalized conversation contracts and canonical model identifiers.
-4. **Model selection uses OICUNT-owned canonical identifiers**: Public requests specify identifiers such as `oicunt.model.general`, never provider-specific model IDs such as `claude-3-5-sonnet` or `gpt-4o`.
+4. **Model selection uses OICUNT-owned canonical identifiers**: Public requests specify identifiers such as `oicunt.model.catalog-alpha`, never provider-specific model IDs such as `provider-model-alpha` or `provider-model-beta`.
 5. **Model responses are normalized**: Synchronous responses conform strictly to the platform's `ApiResponse<NormalizedCompletionData>` envelope.
 6. **Streaming responses are normalized**: Streaming responses use Server-Sent Events (SSE) with strictly defined, typed OICUNT event names and payloads.
 7. **Errors are normalized**: Provider rate limits, context window overages, and timeouts are mapped to standard platform error codes wrapped in `ApiErrorResponse`.
@@ -121,7 +121,7 @@ graph TD
     end
 
     subgraph ExternalLayer["External Layer"]
-        Provider["Upstream LLM Providers<br/>(Anthropic, OpenAI, Bedrock, etc.)"]
+        Provider["Configured Upstream Model Providers"]
     end
 
     BILLY -->|HTTPS / SSE (Bearer Token)| APIGW
@@ -138,7 +138,7 @@ graph TD
 - **Role**: User-facing conversational client application.
 - **Responsibilities**:
   - Accepts user prompt input and maintains local client-side presentation state.
-  - Allows the user to select an OICUNT canonical model (e.g. `claude-sonnet`, `oicunt.model.general`, `oicunt.model.reasoning`, `oicunt.model.fast`).
+  - Allows the user to select an individual model returned by the public catalog using its stable OICUNT-owned ID.
   - Supplies conversation identity (`conversationId`) to track multi-turn dialogues.
   - Sends normalized completion requests to the OICUNT API Gateway with user Bearer tokens.
   - May provide an optional client-side `X-Correlation-ID` header.
@@ -204,7 +204,7 @@ graph TD
 
 - **Role**: Authoritative catalog and routing directory for AI models (Control Plane).
 - **Responsibilities**:
-  - Maintains the registry of OICUNT canonical model identifiers (`claude-sonnet`, `oicunt.model.*`).
+  - Maintains the authoritative registry of individual OICUNT model identifiers in the `oicunt.model.<catalog-slug>` namespace.
   - Resolves canonical identifiers to concrete provider targets, including provider name, upstream model ID, context window limits, and parameter constraints.
   - Manages deployment routing policies (active routing, canary routing, fallbacks, blue-green migrations).
   - Exposes an internal query API for dynamic catalog discovery and model resolution.
@@ -232,7 +232,7 @@ graph TD
 
 - **Role**: Low-level vendor translation plugins encapsulated entirely within the Model Gateway (anti-corruption layer; not independent microservices).
 - **Responsibilities**:
-  - Translates OICUNT normalized requests into vendor-specific wire formats (Anthropic Messages API, OpenAI Chat Completions API, Google Gemini API, etc.).
+  - Translates OICUNT normalized requests into the selected provider's private wire format.
   - Translates vendor-specific streaming chunks into normalized OICUNT stream events.
   - Maps vendor-specific HTTP error codes and exception payloads into normalized gateway errors.
 - **Forbidden**:
@@ -319,7 +319,7 @@ graph LR
 
 ### 6.1 Canonical Naming Convention
 
-All public-facing model selections and orchestration contracts use **OICUNT Canonical Model Identifiers**. Provider-specific model strings (e.g. `gpt-4o-2024-08-06`, `claude-3-5-sonnet-20241022`) are strictly internal implementation details of the Model Registry and Model Gateway.
+All public-facing model selections and orchestration contracts use **OICUNT Canonical Model Identifiers**. Provider-specific model strings (e.g. `provider-model-beta-2024-08-06`, `provider-model-alpha-v1`) are strictly internal implementation details of the Model Registry and Model Gateway.
 
 ```
 oicunt.model.<capability-tier>
@@ -327,11 +327,11 @@ oicunt.model.<capability-tier>
 
 ### 6.2 Standard Platform Model Identifiers
 
-| Canonical Identifier     | Capability Tier               | Primary Use Case                                           | Target Characteristics                              |
-| ------------------------ | ----------------------------- | ---------------------------------------------------------- | --------------------------------------------------- |
-| `oicunt.model.general`   | General Intelligence          | Multi-turn dialogue, general instructions, synthesis       | Balanced latency, high coherence, broad knowledge   |
-| `oicunt.model.reasoning` | Deep Reasoning & Logic        | Code generation, complex deduction, multi-step math        | Extended thinking, deep step-by-step reasoning      |
-| `oicunt.model.fast`      | Low Latency / High Throughput | Quick queries, classifications, summaries, autocompletions | Sub-second first-token latency, lightweight compute |
+| Canonical Identifier         | Capability Tier               | Primary Use Case                                           | Target Characteristics                                  |
+| ---------------------------- | ----------------------------- | ---------------------------------------------------------- | ------------------------------------------------------- |
+| `oicunt.model.catalog-alpha` | Catalog Model Alpha           | Example individual catalog entry                           | Capabilities are supplied dynamically by Model Registry |
+| `oicunt.model.catalog-gamma` | Deep Reasoning & Logic        | Code generation, complex deduction, multi-step math        | Extended thinking, deep step-by-step reasoning          |
+| `oicunt.model.catalog-beta`  | Low Latency / High Throughput | Quick queries, classifications, summaries, autocompletions | Sub-second first-token latency, lightweight compute     |
 
 ### 6.3 Model Resolution Contract
 
@@ -340,7 +340,7 @@ The Model Registry returns a resolved target specification to the Orchestrator/G
 ```typescript
 export interface ModelResolutionTarget {
   readonly canonicalId: string;
-  readonly provider: 'anthropic' | 'openai' | 'google' | 'bedrock';
+  readonly provider: 'test-provider' | 'openai' | 'google' | 'bedrock';
   readonly upstreamModelId: string;
   readonly contextWindow: {
     readonly maxInputTokens: number;
@@ -384,7 +384,7 @@ export interface ModelParameters {
 
 export interface NormalizedAiRequest {
   readonly conversationId: string; // Identifies the ongoing conversation/session
-  readonly model: string; // Canonical identifier: e.g. "oicunt.model.general"
+  readonly model: string; // Canonical identifier: e.g. "oicunt.model.catalog-alpha"
   readonly messages: readonly ChatMessage[]; // Chronological conversation history
   readonly parameters?: ModelParameters; // Optional generation parameters
   readonly stream?: boolean; // Default: false; true enables SSE streaming
@@ -407,7 +407,7 @@ export interface NormalizedAiRequest {
 ```json
 {
   "conversationId": "conv_01J9X4S8AB5C9876543210FEDC",
-  "model": "oicunt.model.general",
+  "model": "oicunt.model.catalog-alpha",
   "messages": [
     {
       "role": "system",
@@ -449,7 +449,7 @@ export interface TokenUsage {
 export interface NormalizedCompletionData {
   readonly completionId: string; // Unique completion ID (e.g. "cmpl_01HXYZ...")
   readonly conversationId: string; // Identifies the conversation session
-  readonly model: string; // Canonical model ID used (e.g. "oicunt.model.general")
+  readonly model: string; // Canonical model ID used (e.g. "oicunt.model.catalog-alpha")
   readonly message: {
     readonly role: 'assistant';
     readonly content: string;
@@ -478,7 +478,7 @@ export interface NormalizedAiResponse {
   "data": {
     "completionId": "cmpl_01J9X4T7M2KV8NRQ9PZ1W4D7FE",
     "conversationId": "conv_01J9X4S8AB5C9876543210FEDC",
-    "model": "oicunt.model.general",
+    "model": "oicunt.model.catalog-alpha",
     "message": {
       "role": "assistant",
       "content": "The architecture invariants mandate that BILLY never contacts LLM providers directly, all provider details remain encapsulated in the Model Gateway, and responses are normalized."
@@ -579,7 +579,7 @@ export interface StreamPingPayload {
 
 ```http
 event: stream.start
-data: {"completionId":"cmpl_01J9X4T7M2KV8NRQ9PZ1W4D7FE","conversationId":"conv_01J9X4S8AB5C9876543210FEDC","requestId":"req_01J9X4T7M2KV8N000000000001","correlationId":"f47ac10b-58cc-4372-a567-0e02b2c3d479","model":"oicunt.model.general","timestamp":"2026-10-04T11:45:00.100Z"}
+data: {"completionId":"cmpl_01J9X4T7M2KV8NRQ9PZ1W4D7FE","conversationId":"conv_01J9X4S8AB5C9876543210FEDC","requestId":"req_01J9X4T7M2KV8N000000000001","correlationId":"f47ac10b-58cc-4372-a567-0e02b2c3d479","model":"oicunt.model.catalog-alpha","timestamp":"2026-10-04T11:45:00.100Z"}
 
 event: stream.delta
 data: {"completionId":"cmpl_01J9X4T7M2KV8NRQ9PZ1W4D7FE","index":0,"delta":"The"}
@@ -648,7 +648,7 @@ The Model Gateway translates upstream vendor errors into canonical OICUNT errors
 | Vendor Error Scenario | Upstream Error Pattern      | OICUNT Normalized Code    | HTTP Status Code         | Leaked Details   |
 | --------------------- | --------------------------- | ------------------------- | ------------------------ | ---------------- |
 | OpenAI Rate Limit     | `rate_limit_exceeded` / 429 | `PROVIDER_RATE_LIMITED`   | 429 Too Many Requests    | None (sanitized) |
-| Anthropic Overloaded  | `overloaded_error` / 529    | `PROVIDER_UNAVAILABLE`    | 503 Service Unavailable  | None (sanitized) |
+| Provider overloaded   | Provider-specific status    | `PROVIDER_UNAVAILABLE`    | 503 Service Unavailable  | None (sanitized) |
 | Gemini Context Limit  | `ResourceExhausted` / 400   | `CONTEXT_LENGTH_EXCEEDED` | 422 Unprocessable Entity | None (sanitized) |
 | Bedrock Throttling    | `ThrottlingException` / 400 | `PROVIDER_RATE_LIMITED`   | 429 Too Many Requests    | None (sanitized) |
 | Connection Reset      | `ECONNRESET`, `ETIMEDOUT`   | `PROVIDER_TIMEOUT`        | 504 Gateway Timeout      | None (sanitized) |
@@ -660,7 +660,7 @@ The Model Gateway translates upstream vendor errors into canonical OICUNT errors
   "success": false,
   "error": {
     "code": "CONTEXT_LENGTH_EXCEEDED",
-    "message": "The conversation prompt exceeds the maximum allowable context window for 'oicunt.model.general'.",
+    "message": "The conversation prompt exceeds the maximum allowable context window for 'oicunt.model.catalog-alpha'.",
     "details": [
       {
         "code": "TOKEN_LIMIT_EXCEEDED",
@@ -684,10 +684,10 @@ The Model Gateway translates upstream vendor errors into canonical OICUNT errors
 
 Before any code implementing the AI vertical slice is merged, reviewers must verify:
 
-- [ ] **No Provider SDK in BILLY**: BILLY packages do not import `@anthropic-ai/sdk`, `openai`, `@google/genai`, or AWS SDKs.
+- [ ] **No Provider SDK in BILLY**: BILLY packages do not import `a vendor SDK`, `openai`, `@google/genai`, or AWS SDKs.
 - [ ] **No Provider SDK in Orchestrator**: The AI Orchestrator package contains zero provider dependencies.
 - [ ] **Pure Model Gateway Egress**: Provider SDKs exist exclusively within `services/model-gateway` provider adapters.
-- [ ] **Canonical Model Identifiers**: Public contracts reject non-canonical model names (e.g. `claude-3-5`, `gpt-4`).
+- [ ] **Canonical Model Identifiers**: Public contracts reject non-canonical model names (e.g. `catalog-alpha-3-5`, `gpt-4`).
 - [ ] **Authoritative Request ID**: API Gateway establishes the authoritative `X-Request-ID` and never blindly trusts a client-provided request ID.
 - [ ] **Identity Header Stripping**: API Gateway strips all client-supplied `X-User-ID`, `X-Tenant-ID`, and `X-Roles` headers, populating them strictly from validated authentication tokens.
 - [ ] **Downstream Trust Enforcement**: Downstream services never trust identity headers unless received over authenticated internal service-to-service connections.

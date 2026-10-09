@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { calculatePagination, err, HttpStatus, isErr, isOk, ok } from './index.js';
+import {
+  calculatePagination,
+  err,
+  HttpStatus,
+  isErr,
+  isOk,
+  ok,
+  validateCreateCompletionRequest,
+} from './index.js';
 
 describe('@oicunt/contracts', () => {
   it('should support Result pattern ok and err', () => {
@@ -41,5 +49,17 @@ describe('@oicunt/contracts', () => {
     expect(HttpStatus.CREATED).toBe(201);
     expect(HttpStatus.NOT_FOUND).toBe(404);
     expect(HttpStatus.INTERNAL_SERVER_ERROR).toBe(500);
+  });
+
+  it('accepts only OICUNT-owned model IDs in the public completion contract', () => {
+    const request = {
+      conversationId: 'conv-1',
+      model: 'oicunt.model.catalog-alpha',
+      messages: [{ role: 'user', content: 'Hello' }],
+    };
+    expect(validateCreateCompletionRequest(request)).toEqual([]);
+    expect(
+      validateCreateCompletionRequest({ ...request, model: 'provider-model-alpha-v1' }),
+    ).toContain('model must be a valid OICUNT catalog model identifier');
   });
 });
