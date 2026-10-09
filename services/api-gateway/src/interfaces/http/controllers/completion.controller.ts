@@ -172,7 +172,6 @@ export class CompletionController {
           if (event === 'finish') {
             this.assertAllowedFields(record, ['finishReason', 'usage']);
             const usage = this.asRecord(record['usage']);
-            this.assertAllowedFields(usage, ['promptTokens', 'completionTokens', 'totalTokens']);
             if (
               typeof record['finishReason'] !== 'string' ||
               !['promptTokens', 'completionTokens', 'totalTokens'].every(
@@ -180,6 +179,17 @@ export class CompletionController {
               )
             )
               throw new Error('Invalid finish event payload');
+            // Project only the public contract fields. Provider-specific
+            // measurements (e.g. reasoningTokens, cachedTokens) are valid
+            // upstream but must neither leak nor fail the public stream.
+            data = {
+              finishReason: record['finishReason'],
+              usage: {
+                promptTokens: usage['promptTokens'],
+                completionTokens: usage['completionTokens'],
+                totalTokens: usage['totalTokens'],
+              },
+            };
           }
           if (
             event === 'error' &&

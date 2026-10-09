@@ -113,7 +113,13 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
   let mockOrchestratorPort: number;
   let lastOrchestratorRequestHeaders: http.IncomingHttpHeaders | null = null;
   let lastOrchestratorRequestBody: Record<string, unknown> | null = null;
-  let orchestratorMode: 'unary' | 'error' | 'stream' | 'unsupported-effort' = 'unary';
+  let orchestratorMode:
+    | 'unary'
+    | 'error'
+    | 'stream'
+    | 'unsupported-effort'
+    | 'stream-extra-usage'
+    | 'stream-malformed-usage' = 'unary';
 
   beforeAll(async () => {
     // 1. Start mock AI Orchestrator
@@ -198,6 +204,34 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
               error: { code: 'INTERNAL_ERROR', message: 'Orchestrator failure' },
             }),
           );
+          return;
+        }
+
+        if (orchestratorMode === 'stream-extra-usage') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+          });
+          res.write('event: token\ndata: {"delta":"Hello"}\n\n');
+          res.write(
+            'event: finish\ndata: {"finishReason":"stop","usage":{"promptTokens":10,"completionTokens":2,"totalTokens":12,"reasoningTokens":4,"cachedTokens":1}}\n\n',
+          );
+          res.end();
+          return;
+        }
+
+        if (orchestratorMode === 'stream-malformed-usage') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+          });
+          res.write('event: token\ndata: {"delta":"Hello"}\n\n');
+          res.write(
+            'event: finish\ndata: {"finishReason":"stop","usage":{"promptTokens":"ten","completionTokens":2}}\n\n',
+          );
+          res.end();
           return;
         }
 
@@ -406,6 +440,71 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
     expect(res.statusCode).toBe(400);
     expect(res.body.success).toBe(false);
     expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    orchestratorMode = 'unary';
+  });
+
+  it('normalizes provider-specific finish usage fields instead of failing the stream', async () => {
+    orchestratorMode = 'stream-extra-usage';
+
+    const tokenWithAiUse = signTestJwt(
+      {
+        sub: 'usr_stream_extra',
+        tenant_id: 'tnt_stream_extra',
+        iss: 'https://auth.oicunt.internal',
+        aud: 'oicunt-platform',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'ai:use',
+      },
+      jwtCtx.privateKey,
+      { kid: 'gw-comp-key' },
+    );
+
+    const res = await makePostRequest(
+      gatewayPort,
+      '/api/v1/ai/completions',
+      { ...validAiPayload, stream: true },
+      { Authorization: `Bearer ${tokenWithAiUse}` },
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.rawText).toContain('event: token\ndata: {"delta":"Hello"}');
+    expect(res.rawText).toContain('event: finish');
+    expect(res.rawText).not.toContain('STREAM_PROTOCOL_ERROR');
+    expect(res.rawText).not.toContain('reasoningTokens');
+    expect(res.rawText).not.toContain('cachedTokens');
+    expect(res.rawText).toContain(
+      'data: {"finishReason":"stop","usage":{"promptTokens":10,"completionTokens":2,"totalTokens":12}}',
+    );
+    orchestratorMode = 'unary';
+  });
+
+  it('still rejects finish frames with malformed supported usage fields', async () => {
+    orchestratorMode = 'stream-malformed-usage';
+
+    const tokenWithAiUse = signTestJwt(
+      {
+        sub: 'usr_stream_malformed',
+        tenant_id: 'tnt_stream_malformed',
+        iss: 'https://auth.oicunt.internal',
+        aud: 'oicunt-platform',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'ai:use',
+      },
+      jwtCtx.privateKey,
+      { kid: 'gw-comp-key' },
+    );
+
+    const res = await makePostRequest(
+      gatewayPort,
+      '/api/v1/ai/completions',
+      { ...validAiPayload, stream: true },
+      { Authorization: `Bearer ${tokenWithAiUse}` },
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.rawText).toContain('event: token');
+    expect(res.rawText).not.toContain('event: finish');
+    expect(res.rawText).toContain('STREAM_PROTOCOL_ERROR');
     orchestratorMode = 'unary';
   });
 
