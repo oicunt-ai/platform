@@ -5,6 +5,7 @@ export interface RequestContext {
   readonly correlationId: string;
   readonly requestId: string;
   readonly tenantId?: string | undefined;
+  readonly userId?: string | undefined;
   readonly actorId?: string | undefined;
   readonly sourceService?: string | undefined;
   readonly deadlineMs?: number | undefined;
@@ -28,6 +29,7 @@ export function extractRequestContext(req: IncomingMessage, res?: ServerResponse
   const correlationId = extractHeader(req, 'x-correlation-id') ?? randomUUID();
   const requestId = extractHeader(req, 'x-request-id') ?? `req_${randomUUID().replace(/-/g, '')}`;
   const tenantId = extractHeader(req, 'x-tenant-id');
+  const userId = extractHeader(req, 'x-user-id');
   const actorId = extractHeader(req, 'x-actor-id');
   const sourceService =
     extractHeader(req, 'x-source-service') ?? extractHeader(req, 'x-service-name');
@@ -54,6 +56,7 @@ export function extractRequestContext(req: IncomingMessage, res?: ServerResponse
     correlationId,
     requestId,
     tenantId,
+    userId,
     actorId,
     sourceService,
     deadlineMs,

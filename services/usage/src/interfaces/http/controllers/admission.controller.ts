@@ -3,6 +3,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabasePool } from '../../../infrastructure/database/connection.js';
 import {
   UsageError,
+  UsageForbiddenError,
+  UsageNotFoundError,
   UsageTenantMismatchError,
   UsageValidationError,
 } from '../../../domain/errors.js';
@@ -29,6 +31,7 @@ export class AdmissionController {
     if (context.tenantId && context.tenantId !== body.tenantId) {
       throw new UsageTenantMismatchError(context.tenantId, body.tenantId);
     }
+    this.assertCallerOwnsUser(context, body.userId);
     const leaseId = `adm_${randomUUID()}`;
     const retryAfterSeconds = 60 - new Date().getUTCSeconds();
     await this.db.withTransaction(async (client) => {
@@ -76,16 +79,47 @@ export class AdmissionController {
   }
 
   async release(req: IncomingMessage, res: ServerResponse, context: RequestContext): Promise<void> {
-    const body = await readJsonBody<{ leaseId?: string; tenantId?: string }>(req);
-    if (!body.leaseId || !body.tenantId)
-      throw new UsageValidationError('leaseId and tenantId are required');
+    const body = await readJsonBody<{
+      leaseId?: string;
+      tenantId?: string;
+      userId?: string;
+    }>(req);
+    if (!body.leaseId || !body.tenantId || !body.userId)
+      throw new UsageValidationError('leaseId, tenantId and userId are required');
     if (context.tenantId && context.tenantId !== body.tenantId)
       throw new UsageTenantMismatchError(context.tenantId, body.tenantId);
+    this.assertCallerOwnsUser(context, body.userId);
+    const existing = await this.db.query<{ user_id: string; expires_at: Date | string }>(
+      `SELECT user_id, expires_at FROM oicunt_usage.admission_leases
+       WHERE id = $1 AND tenant_id = $2`,
+      [body.leaseId, body.tenantId],
+    );
+    const lease = existing.rows[0];
+    if (!lease) throw new UsageNotFoundError('admission lease', body.leaseId);
+    if (lease.user_id !== body.userId)
+      throw new UsageForbiddenError(
+        `User '${body.userId}' does not own admission lease '${body.leaseId}'`,
+      );
     await this.db.query(
       'DELETE FROM oicunt_usage.admission_leases WHERE id = $1 AND tenant_id = $2',
       [body.leaseId, body.tenantId],
     );
     sendJsonResponse(res, 200, { released: true }, context);
+  }
+
+  /**
+   * Binds a caller-asserted user ID to the authenticated identity carried in
+   * the request context. In production the context derives from verified
+   * signed-token claims, so a mismatch proves a spoofed or confused caller.
+   * Without an authenticated identity (unsigned local/test traffic only) the
+   * assertion cannot be verified here and downstream checks still apply.
+   */
+  private assertCallerOwnsUser(context: RequestContext, assertedUserId: string): void {
+    if (context.userId && context.userId !== assertedUserId) {
+      throw new UsageForbiddenError(
+        `Authenticated user '${context.userId}' does not match requested user '${assertedUserId}'`,
+      );
+    }
   }
 
   private async incrementWindow(

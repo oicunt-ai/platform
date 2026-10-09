@@ -40,6 +40,7 @@ export class HttpUsageAdmissionClient implements UsageAdmissionPort {
   async release(input: Parameters<UsageAdmissionPort['release']>[0]): Promise<void> {
     await this.call('/internal/v1/usage/admissions/release', input, {
       tenantId: input.tenantId,
+      userId: input.userId,
       leaseId: input.leaseId,
     });
   }
