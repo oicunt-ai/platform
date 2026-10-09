@@ -113,7 +113,7 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
   let mockOrchestratorPort: number;
   let lastOrchestratorRequestHeaders: http.IncomingHttpHeaders | null = null;
   let lastOrchestratorRequestBody: Record<string, unknown> | null = null;
-  let orchestratorMode: 'unary' | 'error' | 'stream' = 'unary';
+  let orchestratorMode: 'unary' | 'error' | 'stream' | 'unsupported-effort' = 'unary';
 
   beforeAll(async () => {
     // 1. Start mock AI Orchestrator
@@ -196,6 +196,21 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
             JSON.stringify({
               success: false,
               error: { code: 'INTERNAL_ERROR', message: 'Orchestrator failure' },
+            }),
+          );
+          return;
+        }
+
+        if (orchestratorMode === 'unsupported-effort') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              success: false,
+              error: {
+                code: 'UNSUPPORTED_EFFORT_LEVEL',
+                message:
+                  "Model 'oicunt.model.catalog-beta' does not support reasoning effort 'high'.",
+              },
             }),
           );
           return;
@@ -334,6 +349,64 @@ describe('API Gateway - AI Completions Ingress Integration Tests', () => {
     expect(lastOrchestratorRequestBody?.['stream']).toBe(true);
     expect(lastOrchestratorRequestHeaders?.['x-user-id']).toBe('usr_streamer');
     expect(lastOrchestratorRequestHeaders?.['x-tenant-id']).toBe('tnt_streamer');
+  });
+
+  it('forwards effort and exposeReasoning options to the orchestrator', async () => {
+    orchestratorMode = 'unary';
+
+    const tokenWithAiUse = signTestJwt(
+      {
+        sub: 'usr_options',
+        tenant_id: 'tnt_options',
+        iss: 'https://auth.oicunt.internal',
+        aud: 'oicunt-platform',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'ai:use',
+      },
+      jwtCtx.privateKey,
+      { kid: 'gw-comp-key' },
+    );
+
+    const res = await makePostRequest(
+      gatewayPort,
+      '/api/v1/ai/completions',
+      { ...validAiPayload, effort: 'high', exposeReasoning: true },
+      { Authorization: `Bearer ${tokenWithAiUse}` },
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(lastOrchestratorRequestBody?.['effort']).toBe('high');
+    expect(lastOrchestratorRequestBody?.['exposeReasoning']).toBe(true);
+  });
+
+  it('maps downstream unsupported-effort errors to VALIDATION_ERROR', async () => {
+    orchestratorMode = 'unsupported-effort';
+
+    const tokenWithAiUse = signTestJwt(
+      {
+        sub: 'usr_options',
+        tenant_id: 'tnt_options',
+        iss: 'https://auth.oicunt.internal',
+        aud: 'oicunt-platform',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'ai:use',
+      },
+      jwtCtx.privateKey,
+      { kid: 'gw-comp-key' },
+    );
+
+    const res = await makePostRequest(
+      gatewayPort,
+      '/api/v1/ai/completions',
+      { ...validAiPayload, effort: 'high' },
+      { Authorization: `Bearer ${tokenWithAiUse}` },
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    orchestratorMode = 'unary';
   });
 
   it('authenticates, checks ai:use, strips spoofed headers, and forwards unary completion to orchestrator', async () => {

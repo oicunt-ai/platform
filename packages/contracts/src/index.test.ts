@@ -62,4 +62,32 @@ describe('@oicunt/contracts', () => {
       validateCreateCompletionRequest({ ...request, model: 'provider-model-alpha-v1' }),
     ).toContain('model must be a valid OICUNT catalog model identifier');
   });
+
+  it('accepts optional effort and exposeReasoning completion options', () => {
+    const request = {
+      conversationId: 'conv-1',
+      model: 'oicunt.model.catalog-alpha',
+      messages: [{ role: 'user', content: 'Hello' }],
+      effort: 'medium',
+      exposeReasoning: true,
+    };
+    expect(validateCreateCompletionRequest(request)).toEqual([]);
+    expect(validateCreateCompletionRequest({ ...request, exposeReasoning: false })).toEqual([]);
+  });
+
+  it('rejects malformed effort and exposeReasoning values at the public boundary', () => {
+    const request = {
+      conversationId: 'conv-1',
+      model: 'oicunt.model.catalog-alpha',
+      messages: [{ role: 'user', content: 'Hello' }],
+    };
+    for (const effort of [42, '', '   ', 'x'.repeat(65), ['high'], { level: 'high' }]) {
+      expect(validateCreateCompletionRequest({ ...request, effort })).toContain(
+        'effort must be a non-empty string',
+      );
+    }
+    expect(validateCreateCompletionRequest({ ...request, exposeReasoning: 'yes' })).toContain(
+      'exposeReasoning must be a boolean',
+    );
+  });
 });

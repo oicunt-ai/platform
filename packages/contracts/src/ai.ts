@@ -1,4 +1,4 @@
-export const AI_PUBLIC_CONTRACT_VERSION = '1.0.0' as const;
+export const AI_PUBLIC_CONTRACT_VERSION = '1.1.0' as const;
 export const OICUNT_MODEL_ID_PATTERN = /^oicunt\.model\.[a-z0-9][a-z0-9._-]{0,47}$/;
 
 export type PublicAiErrorCode =
@@ -27,6 +27,19 @@ export interface CreateCompletionRequest {
   readonly messages: readonly PublicChatMessage[];
   readonly stream?: boolean | undefined;
   readonly timeoutMs?: number | undefined;
+  /**
+   * Optional model reasoning effort hint (for example 'low', 'medium' or
+   * 'high'). Whether a value is supported depends on the selected model and
+   * is enforced against authoritative Registry metadata downstream; the
+   * public boundary only checks that a usable value was supplied.
+   */
+  readonly effort?: string | undefined;
+  /**
+   * Opt-in exposure of model reasoning content. Omitted or false keeps
+   * reasoning hidden; only an explicit true may expose it, subject to
+   * downstream enforcement.
+   */
+  readonly exposeReasoning?: boolean | undefined;
   readonly parameters?:
     | {
         readonly maxTokens?: number | undefined;
@@ -95,6 +108,8 @@ export function validateCreateCompletionRequest(value: unknown): readonly string
     'messages',
     'stream',
     'timeoutMs',
+    'effort',
+    'exposeReasoning',
     'parameters',
   ]);
   for (const key of Object.keys(body)) {
@@ -108,6 +123,15 @@ export function validateCreateCompletionRequest(value: unknown): readonly string
   }
   if ('stream' in body && typeof body['stream'] !== 'boolean') {
     errors.push('stream must be a boolean');
+  }
+  if (
+    'effort' in body &&
+    (typeof body['effort'] !== 'string' || !body['effort'].trim() || body['effort'].length > 64)
+  ) {
+    errors.push('effort must be a non-empty string');
+  }
+  if ('exposeReasoning' in body && typeof body['exposeReasoning'] !== 'boolean') {
+    errors.push('exposeReasoning must be a boolean');
   }
   if (
     'timeoutMs' in body &&

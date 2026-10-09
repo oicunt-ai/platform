@@ -77,6 +77,61 @@ describe('ForwardCompletionUseCase - Unit Tests', () => {
     expect(called).toBe(true);
   });
 
+  it('should forward effort and exposeReasoning options without dropping them', async () => {
+    let forwardedBody: unknown;
+    const mockClient: OrchestratorClientPort = {
+      async forwardCompletion(request) {
+        forwardedBody = request.body;
+        return { statusCode: 200, headers: {} };
+      },
+    };
+
+    const useCase = new ForwardCompletionUseCase(mockClient);
+    const result = await useCase.execute({
+      identity: validIdentityWithAiUse,
+      requestId: 'req-1',
+      correlationId: 'corr-1',
+      body: {
+        ...validAiPayload,
+        effort: 'medium',
+        exposeReasoning: false,
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(forwardedBody).toMatchObject({ effort: 'medium', exposeReasoning: false });
+  });
+
+  it('should reject malformed effort and exposeReasoning with ValidationError', async () => {
+    let called = false;
+    const mockClient: OrchestratorClientPort = {
+      async forwardCompletion() {
+        called = true;
+        return { statusCode: 200, headers: {} };
+      },
+    };
+
+    const useCase = new ForwardCompletionUseCase(mockClient);
+    for (const body of [
+      { ...validAiPayload, effort: 42 },
+      { ...validAiPayload, effort: '' },
+      { ...validAiPayload, exposeReasoning: 'yes' },
+    ]) {
+      const result = await useCase.execute({
+        identity: validIdentityWithAiUse,
+        requestId: 'req-1',
+        correlationId: 'corr-1',
+        body,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(ValidationError);
+        expect(result.error.statusCode).toBe(400);
+      }
+    }
+    expect(called).toBe(false);
+  });
+
   it('should reject non-boolean stream field with ValidationError', async () => {
     let called = false;
     const mockClient: OrchestratorClientPort = {

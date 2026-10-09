@@ -388,6 +388,8 @@ export interface NormalizedAiRequest {
   readonly messages: readonly ChatMessage[]; // Chronological conversation history
   readonly parameters?: ModelParameters; // Optional generation parameters
   readonly stream?: boolean; // Default: false; true enables SSE streaming
+  readonly effort?: string; // Optional reasoning effort hint; support is model-specific
+  readonly exposeReasoning?: boolean; // Opt-in reasoning exposure; default: hidden
   readonly metadata?: Record<string, string>; // Client-provided tracing tags
 }
 ```
