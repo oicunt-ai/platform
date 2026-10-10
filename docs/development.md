@@ -168,3 +168,61 @@ When implementing features inside a service:
 - **Explicit Returns**: Keep exported functions and public API contracts strongly typed.
 - **Formatting**: Run `pnpm format` before opening a pull request.
 - **Error Handling**: Use `Result<T, E>` for operational flows; avoid throwing untyped runtime exceptions.
+
+---
+
+## 8. Local Development Stack (`pnpm dev`)
+
+`pnpm dev` runs `scripts/dev-up.mjs`, a dependency-free Node launcher that
+starts the Platform API Gateway (3000) with readiness gating, then
+supervises it in the foreground. Platform Usage is never started by it.
+
+### Prerequisites
+
+- AI Platform stack running via its own launcher (or equivalent) so the
+  Orchestrator answers `/readyz`.
+- A development JWT issuer serving JWKS (BILLY's `npm run dev:auth`
+  provides `http://127.0.0.1:4567/.well-known/jwks.json`).
+- A repo `.env` copied from `.env.example` with real local values.
+- A built gateway (`pnpm build`): the launcher runs `dist/start.js`.
+
+### Required environment variable names
+
+`INTERNAL_SERVICE_TOKEN` (shared development secret for service auth;
+`INTERNAL_SERVICE_SECRET` and `AI_ORCHESTRATOR_INTERNAL_TOKEN` are
+honored when set), `JWKS_URI`, `JWT_ISSUER` (`JWT_AUDIENCE` defaults to
+`oicunt-platform`). Missing names abort startup with an explicit list —
+values are never printed. Use one strong random value for every local
+process; this is the same shared value the AI Platform launcher uses, so
+no second identity authority exists.
+
+### Orchestrator URL and admission
+
+The launcher forces `ORCHESTRATOR_BASE_URL=http://127.0.0.1:3003` when
+unset and rejects operator-set values that are unparsable or point at
+port 3001. `ENABLE_USAGE_ADMISSION=true` aborts startup: admission needs
+the Usage service, whose boot-time migration requires separate
+authorization. There is no `--with-usage` option; Usage launching is
+deferred until that authorization exists.
+
+### Running, verifying, and stopping
+
+```bash
+pnpm dev
+```
+
+The Gateway is gated on `/healthz` then `/readyz` (bounded timeouts).
+Output shares one terminal prefixed `[api-gateway]` (service) or
+`[dev-up]` (launcher). Press Ctrl+C to stop. If the Gateway dies
+unexpectedly, the launcher reports it and exits — nothing is restarted
+automatically.
+
+### Troubleshooting
+
+- **Occupied port:** the launcher refuses duplicates and names the port
+  and probe result. Stop the existing process or free the port.
+- **Missing secrets:** the launcher names the exact variables.
+- **Orchestrator/JWKS unreachable:** start the AI Platform stack and the
+  issuer first; the launcher names which dependency failed.
+- **Production guard:** the launcher refuses `NODE_ENV=production` and
+  always binds `127.0.0.1`.

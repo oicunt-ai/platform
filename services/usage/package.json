@@ -14,6 +14,7 @@
   },
   "scripts": {
     "build": "tsc -b && node -e \"import('node:fs').then(fs => { fs.mkdirSync('dist/infrastructure/database/migrations', { recursive: true }); fs.cpSync('src/infrastructure/database/migrations', 'dist/infrastructure/database/migrations', { recursive: true }); });\"",
+    "start": "node ./dist/start.js",
     "type-check": "tsc -b --noEmit"
   },
   "dependencies": {

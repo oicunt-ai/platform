@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc -b",
     "clean": "node ./scripts/clean.mjs",
+    "dev": "node ./scripts/dev-up.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
