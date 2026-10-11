@@ -6,7 +6,7 @@
  * only; no process managers, no new dependencies.
  *
  * Safety: never migrates, seeds, or touches Docker. Never starts Platform
- * Usage (its boot-time migration needs separate authorization) and never
+ * Usage (started separately with `pnpm usage`) and never
  * starts AI Platform services (separate repository). Refuses
  * NODE_ENV=production. Binds loopback only.
  */
@@ -56,8 +56,8 @@ function printUsage() {
       'JWKS_URI, and JWT_ISSUER set (see .env.example), and a built gateway',
       '(`pnpm build`). Stays in the foreground; Ctrl+C stops the Gateway.',
       '',
-      'Platform Usage is never started by this launcher: its startup runs',
-      'database migrations, which need separate authorization.',
+      'Platform Usage is never started by this launcher: run it separately',
+      'with `pnpm usage` (routine Usage startup never applies migrations).',
     ].join('\n'),
   );
 }
@@ -94,8 +94,8 @@ async function main() {
   if (admissionRequested(env)) {
     fail(
       'dev-up: ENABLE_USAGE_ADMISSION=true requires the Usage service, which this ' +
-        'launcher never starts (its startup runs migrations). Unset it for the ordinary ' +
-        'Gateway development workflow.',
+        'launcher never starts (start it separately with `pnpm usage`). Unset it for the ' +
+        'ordinary Gateway development workflow.',
     );
   }
 

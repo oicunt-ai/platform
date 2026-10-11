@@ -41,7 +41,8 @@ export interface AmqpConnectionLike {
 }
 
 export class RabbitMqUsageConsumer implements UsageQueueConsumerPort {
-  private readonly url: string;
+  /** Undefined when unconfigured: there is no implicit guest@localhost broker. */
+  private readonly url: string | undefined;
   private readonly exchange: string;
   private readonly queue: string;
   private readonly dlx: string;
@@ -63,7 +64,8 @@ export class RabbitMqUsageConsumer implements UsageQueueConsumerPort {
     customConnection?: AmqpConnectionLike | undefined,
     private readonly logger?: JsonLogger | undefined,
   ) {
-    this.url = config.url ?? process.env['RABBITMQ_URL'] ?? 'amqp://guest:guest@localhost:5672';
+    const envUrl = process.env['RABBITMQ_URL']?.trim();
+    this.url = config.url ?? (envUrl === undefined || envUrl === '' ? undefined : envUrl);
     this.exchange = config.exchange ?? 'oicunt.usage';
     this.queue = config.queue ?? 'oicunt.usage.events';
     this.dlx = config.dlx ?? 'oicunt.usage.dlx';
@@ -87,6 +89,13 @@ export class RabbitMqUsageConsumer implements UsageQueueConsumerPort {
 
     try {
       if (!this.connection) {
+        if (!this.url) {
+          // Fail closed: never guess a broker, and never fall back to a
+          // hardcoded guest@localhost endpoint.
+          throw new UsageConnectionError(
+            'RabbitMQ URL is not configured (set RABBITMQ_URL to an amqp:// or amqps:// URL)',
+          );
+        }
         this.connection = (await amqplib.connect(this.url)) as unknown as AmqpConnectionLike;
       }
 

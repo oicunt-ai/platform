@@ -12,7 +12,6 @@ import {
   RecomputeAggregatesUseCase,
 } from './application/use-cases/index.js';
 import { DatabasePool } from './infrastructure/database/connection.js';
-import { DatabaseMigrator } from './infrastructure/database/migrator.js';
 import { JsonLogger } from './infrastructure/logging/logger.js';
 import { UsageMetrics } from './infrastructure/observability/metrics.js';
 import { InMemoryUsageRepository } from './infrastructure/repositories/in-memory-usage.repository.js';
@@ -76,7 +75,10 @@ export class UsageService {
       this.dbPool = customDeps.dbPool ?? new DatabasePool(this.config.database);
       this.repository = new PostgresUsageRepository(this.dbPool);
     } else {
-      this.dbPool = null;
+      // In-memory repository, but an explicitly injected pool is always
+      // honored so readiness reflects the dependency the test provided
+      // instead of silently discarding it.
+      this.dbPool = customDeps.dbPool ?? null;
       this.repository = new InMemoryUsageRepository();
     }
 
@@ -134,22 +136,11 @@ export class UsageService {
       return;
     }
 
-    // 1. Run migrations if PostgreSQL is active
-    if (this.dbPool) {
-      try {
-        const migrator = new DatabaseMigrator(this.dbPool);
-        const result = await migrator.runMigrations();
-        this.logger.info('Database migrations completed', {
-          appliedCount: result.applied.length,
-          alreadyAppliedCount: result.alreadyApplied.length,
-        });
-      } catch (err) {
-        this.logger.error('Failed to run database migrations', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-        throw err;
-      }
-    }
+    // 1. Database migrations are NEVER applied here. Schema changes run
+    // only through the standalone migrate entrypoint
+    // (src/migrate.ts, `pnpm --filter usage migrate`), which an operator
+    // invokes deliberately. This keeps routine startup — including
+    // production boot — free of schema side effects by construction.
 
     // 2. Start AMQP queue consumer if enabled
     if (this.queueConsumer) {

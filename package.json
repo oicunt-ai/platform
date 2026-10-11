@@ -18,6 +18,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "type-check": "tsc -p tsconfig.typecheck.json",
+    "usage": "node ./scripts/usage-up.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "node ./scripts/verify.mjs"

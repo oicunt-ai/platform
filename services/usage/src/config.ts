@@ -9,7 +9,8 @@ export interface UsageConfig {
   readonly database: DatabasePoolConfig;
   readonly useDatabase: boolean;
   readonly logLevel: LogLevel;
-  readonly rabbitmqUrl: string;
+  /** Broker URL. Undefined when unconfigured: never defaulted, never guessed. */
+  readonly rabbitmqUrl: string | undefined;
   readonly useRabbitMq: boolean;
   readonly rabbitmqExchange: string;
   readonly rabbitmqQueue: string;
@@ -26,49 +27,88 @@ export interface UsageConfig {
 export function loadUsageConfig(overrides: Partial<UsageConfig> = {}): UsageConfig {
   const isTest = process.env['NODE_ENV'] === 'test';
 
+  // Blank environment values are treated as unset so that documented
+  // fallbacks engage instead of silently locking in empty strings (which
+  // previously bypassed token checks and pointed clients at wrong hosts).
+  const clean = (value: string | undefined): string | undefined => {
+    if (value === undefined) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed === '' ? undefined : trimmed;
+  };
+
+  // Strict integer parsing: '5433', ' 5433 ' parse; '5433abc', 'abc' and
+  // '' become undefined so startup validation can reject them explicitly
+  // instead of handing NaN to the driver.
+  const parseInteger = (value: string | undefined): number | undefined => {
+    const text = clean(value);
+    if (text === undefined) {
+      return undefined;
+    }
+    const parsed = Number(text);
+    return Number.isInteger(parsed) ? parsed : undefined;
+  };
+
   const config: UsageConfig = {
     serviceName: overrides.serviceName ?? 'usage',
-    port: overrides.port ?? Number.parseInt(process.env['USAGE_SERVICE_PORT'] ?? '8090', 10),
-    host: overrides.host ?? process.env['USAGE_SERVICE_HOST'] ?? '0.0.0.0',
+    port: overrides.port ?? parseInteger(process.env['USAGE_SERVICE_PORT']) ?? 8090,
+    // Bind host: defaults to ALL interfaces (0.0.0.0). Operators who want a
+    // loopback-only service MUST set USAGE_SERVICE_HOST=127.0.0.1; this is
+    // documented in .env.example and docs/development.md. Never silently
+    // changed here, because callers depend on the historical default.
+    host: overrides.host ?? clean(process.env['USAGE_SERVICE_HOST']) ?? '0.0.0.0',
     internalToken:
-      overrides.internalToken ??
-      process.env['PLATFORM_USAGE_INTERNAL_TOKEN'] ??
-      process.env['INTERNAL_SERVICE_TOKEN'] ??
-      process.env['USAGE_INTERNAL_TOKEN'],
+      clean(overrides.internalToken) ??
+      clean(process.env['PLATFORM_USAGE_INTERNAL_TOKEN']) ??
+      clean(process.env['INTERNAL_SERVICE_TOKEN']) ??
+      clean(process.env['USAGE_INTERNAL_TOKEN']),
     database: {
       host:
-        overrides.database?.host ?? process.env['USAGE_DB_HOST'] ?? process.env['DATABASE_HOST'],
+        overrides.database?.host ??
+        clean(process.env['USAGE_DB_HOST']) ??
+        clean(process.env['DATABASE_HOST']),
       port:
         overrides.database?.port ??
-        (process.env['USAGE_DB_PORT']
-          ? Number.parseInt(process.env['USAGE_DB_PORT'], 10)
-          : undefined),
+        parseInteger(process.env['USAGE_DB_PORT']) ??
+        parseInteger(process.env['DATABASE_PORT']),
       database:
         overrides.database?.database ??
-        process.env['USAGE_DB_NAME'] ??
-        process.env['DATABASE_NAME'] ??
+        clean(process.env['USAGE_DB_NAME']) ??
+        clean(process.env['DATABASE_NAME']) ??
         'oicunt_usage',
       user:
-        overrides.database?.user ?? process.env['USAGE_DB_USER'] ?? process.env['DATABASE_USER'],
+        overrides.database?.user ??
+        clean(process.env['USAGE_DB_USER']) ??
+        clean(process.env['DATABASE_USER']),
       password:
         overrides.database?.password ??
-        process.env['USAGE_DB_PASSWORD'] ??
-        process.env['DATABASE_PASSWORD'],
+        clean(process.env['USAGE_DB_PASSWORD']) ??
+        clean(process.env['DATABASE_PASSWORD']),
       ssl:
         overrides.database?.ssl ??
         (process.env['DATABASE_SSL'] === 'true' ? { rejectUnauthorized: false } : undefined),
     },
+    // Dependency selection reads the SAME normalized values that
+    // validateStartupConfig() and the PostgreSQL pool consume, so a
+    // configuration can never validate against one host/port and connect
+    // with another (USAGE_DB_* always wins over DATABASE_*).
     useDatabase:
       overrides.useDatabase ??
-      (!isTest && process.env['USE_DATABASE'] !== 'false' && Boolean(process.env['DATABASE_HOST'])),
+      (!isTest &&
+        process.env['USE_DATABASE'] !== 'false' &&
+        Boolean(clean(process.env['USAGE_DB_HOST']) ?? clean(process.env['DATABASE_HOST']))),
     logLevel:
       overrides.logLevel ??
       ((process.env['LOG_LEVEL'] as LogLevel) || (isTest ? 'silent' : 'info')),
-    rabbitmqUrl:
-      overrides.rabbitmqUrl ?? process.env['RABBITMQ_URL'] ?? 'amqp://guest:guest@localhost:5672',
+    // No hardcoded guest@localhost fallback: an absent or blank broker URL
+    // stays undefined so validateStartupConfig() refuses standalone boot.
+    rabbitmqUrl: overrides.rabbitmqUrl ?? clean(process.env['RABBITMQ_URL']),
     useRabbitMq:
       overrides.useRabbitMq ??
-      (!isTest && process.env['USE_RABBITMQ'] !== 'false' && Boolean(process.env['RABBITMQ_URL'])),
+      (!isTest &&
+        process.env['USE_RABBITMQ'] !== 'false' &&
+        Boolean(clean(process.env['RABBITMQ_URL']))),
     rabbitmqExchange:
       overrides.rabbitmqExchange ?? process.env['USAGE_RABBITMQ_EXCHANGE'] ?? 'oicunt.usage',
     rabbitmqQueue:
@@ -100,6 +140,10 @@ export function loadUsageConfig(overrides: Partial<UsageConfig> = {}): UsageConf
     const missing = [
       ['PLATFORM_USAGE_INTERNAL_TOKEN', config.internalToken],
       ['DATABASE_HOST', config.database.host],
+      [
+        'DATABASE_PORT',
+        config.database.port === undefined ? undefined : String(config.database.port),
+      ],
       ['DATABASE_USER', config.database.user],
       ['DATABASE_PASSWORD', config.database.password],
       ['RABBITMQ_URL', config.rabbitmqUrl],

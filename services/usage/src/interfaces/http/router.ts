@@ -37,7 +37,14 @@ export function createHttpRouter(deps: RouterDependencies) {
         return;
       }
       if (pathname === '/readyz' || pathname === '/health/readiness') {
-        await handleReadiness(res, deps.dbPool, deps.queueConsumer?.isReady?.() ?? true);
+        // Truthful readiness: a missing consumer is never ready, and a
+        // consumer that does not expose a readiness signal is treated as
+        // not ready rather than assumed healthy.
+        const queueReady =
+          deps.queueConsumer !== null &&
+          deps.queueConsumer !== undefined &&
+          (deps.queueConsumer.isReady?.() ?? false);
+        await handleReadiness(res, deps.dbPool, queueReady);
         return;
       }
     }

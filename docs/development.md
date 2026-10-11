@@ -201,9 +201,8 @@ no second identity authority exists.
 The launcher forces `ORCHESTRATOR_BASE_URL=http://127.0.0.1:3003` when
 unset and rejects operator-set values that are unparsable or point at
 port 3001. `ENABLE_USAGE_ADMISSION=true` aborts startup: admission needs
-the Usage service, whose boot-time migration requires separate
-authorization. There is no `--with-usage` option; Usage launching is
-deferred until that authorization exists.
+the Usage service, which this launcher never starts — run it separately
+with `pnpm usage`. There is no `--with-usage` option.
 
 ### Running, verifying, and stopping
 
@@ -226,3 +225,44 @@ automatically.
   issuer first; the launcher names which dependency failed.
 - **Production guard:** the launcher refuses `NODE_ENV=production` and
   always binds `127.0.0.1`.
+
+### Platform Usage lifecycle (explicit opt-in only)
+
+Usage is never started by `pnpm dev`; `node dist/index.js` is a
+side-effect-free library import and never auto-starts anything. The
+supported way to run it locally is the official launcher:
+
+```bash
+pnpm usage          # loads .env, validates config, enforces 127.0.0.1:8090
+```
+
+`scripts/usage-up.mjs` loads the platform-owned `.env` (process values
+win), requires the internal token, PostgreSQL settings (`USAGE_DB_*` wins
+over `DATABASE_*`) and `RABBITMQ_URL`, refuses `NODE_ENV=production`,
+`USE_DATABASE=false`, `USE_RABBITMQ=false`, the removed
+`USAGE_AUTO_MIGRATE` toggle, non-loopback bind settings, a missing build
+and an occupied port 8090, then supervises the child with Ctrl+C
+shutdown (SIGTERM, then SIGKILL for stragglers). It spawns only
+`services/usage/dist/start.js` and never a migration command. The token
+it forwards is the HS256 HMAC signing secret used to sign internal
+service JWTs (`aud platform-usage`, `sub api-gateway`); requests never
+carry it raw, and the launcher never transmits it.
+
+Underneath, the entrypoint itself validates its configuration and
+refuses to boot without an internal token, explicit PostgreSQL access
+(host, port, user, password) and an explicit `amqp://`/`amqps://` broker
+URL — there is no implicit `guest@localhost` broker and no
+`USE_DATABASE=false` / `USE_RABBITMQ=false` escape hatch — so a
+misconfigured process fails closed instead of running degraded against
+in-memory fallbacks. It then performs a **read-only schema compatibility
+verification** (migration ledger plus the critical tables/columns this
+build queries) and refuses to serve traffic when the deployed schema does
+not match. Routine startup **never applies migrations**: schema changes
+require the deliberate command `pnpm --filter @oicunt/service-usage
+migrate`, after a database backup. The raw entrypoint binds all
+interfaces (`0.0.0.0`) unless `USAGE_SERVICE_HOST` is set explicitly —
+the `pnpm usage` launcher pins `127.0.0.1:8090`. Readiness (`/readyz`)
+reflects the real dependencies: no pool or an inactive consumer reports
+503, never "up". Migration history lives in `oicunt_usage._migrations`;
+usage records are append-only and corrected via reversal events, never
+SQL updates.

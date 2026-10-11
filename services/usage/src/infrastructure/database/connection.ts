@@ -17,12 +17,43 @@ export class DatabasePool {
   private readonly pool: Pool;
 
   constructor(config: DatabasePoolConfig = {}) {
+    // Fallbacks read the SAME normalized variables as loadUsageConfig()
+    // (USAGE_DB_* wins over DATABASE_*), and no identity defaults such as
+    // 'localhost' / 5432 / 'postgres' are invented here: a connection
+    // target must never be one that startup validation never saw. Values
+    // left undefined fall through to the driver's own defaults, which are
+    // only reachable by library callers that bypass the startup gate.
+    const clean = (value: string | undefined): string | undefined => {
+      const trimmed = value?.trim();
+      return trimmed ? trimmed : undefined;
+    };
+    const parseInteger = (value: string | undefined): number | undefined => {
+      const text = clean(value);
+      if (text === undefined) {
+        return undefined;
+      }
+      const parsed = Number(text);
+      return Number.isInteger(parsed) ? parsed : undefined;
+    };
+
     this.pool = new Pool({
-      host: config.host ?? process.env['DATABASE_HOST'] ?? 'localhost',
-      port: config.port ?? Number.parseInt(process.env['DATABASE_PORT'] ?? '5432', 10),
-      database: config.database ?? process.env['DATABASE_NAME'] ?? 'oicunt_usage',
-      user: config.user ?? process.env['DATABASE_USER'] ?? 'postgres',
-      password: config.password ?? process.env['DATABASE_PASSWORD'] ?? '',
+      host:
+        config.host ?? clean(process.env['USAGE_DB_HOST']) ?? clean(process.env['DATABASE_HOST']),
+      port:
+        config.port ??
+        parseInteger(process.env['USAGE_DB_PORT']) ??
+        parseInteger(process.env['DATABASE_PORT']),
+      database:
+        config.database ??
+        clean(process.env['USAGE_DB_NAME']) ??
+        clean(process.env['DATABASE_NAME']) ??
+        'oicunt_usage',
+      user:
+        config.user ?? clean(process.env['USAGE_DB_USER']) ?? clean(process.env['DATABASE_USER']),
+      password:
+        config.password ??
+        clean(process.env['USAGE_DB_PASSWORD']) ??
+        clean(process.env['DATABASE_PASSWORD']),
       ssl:
         config.ssl ??
         (process.env['DATABASE_SSL'] === 'true' ? { rejectUnauthorized: false } : undefined),
