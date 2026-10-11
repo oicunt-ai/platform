@@ -266,3 +266,85 @@ reflects the real dependencies: no pool or an inactive consumer reports
 503, never "up". Migration history lives in `oicunt_usage._migrations`;
 usage records are append-only and corrected via reversal events, never
 SQL updates.
+
+### Usage RabbitMQ retries, DLQ, and recovery (operators)
+
+Transient ingestion failures (database/network) never hot-requeue.
+The consumer republishes the byte-identical message to a fixed-delay
+retry tier and acks the original only after the broker confirms the
+retry copy; an unconfirmed retry copy is never acked and never dropped.
+Tiers (declared durable quorum queues at startup alongside the existing
+topology): `oicunt.usage.retry.5s` (TTL 5 s), `oicunt.usage.retry.30s`
+(TTL 30 s), `oicunt.usage.retry.5m` (TTL 5 min). Each tier carries ONE
+uniform TTL, so there is no mixed-TTL head-of-line blocking. Quorum
+queues move expired messages to the main exchange with at-least-once
+dead-letter semantics, stamped with routing key `usage.v1.retry`,
+which the existing `usage.v1.#` binding routes back to
+`oicunt.usage.events` — no new bindings. Attempt N uses tier
+`min(N, last)` via the explicit `x-usage-attempts` header; after
+`USAGE_RABBITMQ_MAX_ATTEMPTS` (default 5) the message goes to the DLQ.
+Retry and DLQ copies publish with `mandatory: true` and per-message
+confirm/return correlation: a returned (unroutable) copy is never
+counted as delivered, and confirmation timeouts fail retryable with
+the original identity preserved. Permanent validation failures and
+malformed JSON go to the DLQ through an explicit mandatory publish
+that the broker must confirm before the original is acked. The
+classic main queue's ordinary dead-letter hop is never used as a
+fallback: classic dead-lettering is at-most-once, so an unconfirmed
+hop cannot prove preservation. If confirmed DLQ publication fails,
+the original is never acked and never permanently rejected — the
+consumer closes the channel so the broker requeues it, and bounded
+reconnect/backoff paces redelivery without hot loops (readiness
+reports degraded until recovery). When the DLQ destination is
+available again, redelivery completes the transfer automatically.
+Event identity and payload are preserved on every transfer, and
+broker redeliveries cannot double-bill (`UNIQUE
+(tenant_id, idempotency_key)` plus first-insert-only aggregates).
+
+- **Broker drops:** the consumer reconnects with capped exponential
+  backoff and jitter, reasserts all topology, and resubscribes; unacked
+  messages are requeued by the broker automatically. Startup stays
+  fail-closed (no broker means no boot); runtime drops recover without
+  operator action. `/readyz` reports 503 with `usageQueue=down` until
+  the subscription is re-established.
+- **DLQ monitoring:** alert on `oicunt.usage.dlq` depth > 0 and on retry
+  tier depth growth; dashboard queue depth, consumer count (= 1
+  healthy), and redelivery rate.
+- **Operator replay:** move DLQ messages back to the `oicunt.usage`
+  exchange (management UI "Move messages" or shovel) preserving bodies
+  and headers; duplicates are harmless. There is no automatic DLQ
+  replay and no silent message deletion.
+- **Retention/rollback:** all queues durable, all usage messages
+  persistent — a broker restart loses nothing. The retry topology is
+  purely additive: the main queue, DLX, DLQ, and bindings are byte-for-byte
+  unchanged (their types are never altered — converting the live classic
+  main queue would require deletion), while the greenfield retry tiers are
+  quorum queues from first declaration. Older builds ignore the new
+  queues, so downgrade is safe; removing the feature is a config change,
+  never a migration. Quorum queues need no plugins (built into RabbitMQ
+  ≥ 3.8; floor here is 3.13) and work on single-node development
+  clusters; production wants an odd-numbered cluster for Raft quorum.
+- **RabbitMQ 3.13 prerequisites (verify on the broker before relying on
+  recoverable retries):** quorum `oicunt.usage.retry.*` queues declared
+  with `x-dead-letter-strategy: at-least-once` (quorum type alone is only
+  at-most-once), `x-overflow: reject-publish`, a valid dead-letter
+  exchange (`oicunt.usage`) and routing key (`usage.v1.retry`), and the
+  broker's `stream_queue` feature flag enabled (check `rabbitmqctl
+status` / the management overview). The consumer declares all of
+  these at startup and refuses to boot if declaration fails — but
+  declaration success is not a substitute for the live-broker proofs
+  below.
+- **Quorum vs classic dead-lettering:** quorum tiers move expired
+  messages with at-least-once semantics (retained until the transfer
+  completes); the classic main queue only offers at-most-once
+  dead-lettering, which is why the consumer never relies on the
+  classic DLX hop for preservation — DLQ transfers are explicit,
+  mandatory, positively confirmed publishes, and failures preserve via
+  channel closure plus broker redelivery instead.
+- **Still required: real-broker integration tests** (not runnable from
+  unit fakes, which assert declaration/publish/ack contracts but cannot
+  execute TTL expiry or broker restarts): end-to-end TTL-expiry
+  re-routing into `oicunt.usage.events`, at-least-once behavior across
+  a broker restart with a full tier, DLQ replay drill, and depth /
+  consumer-count alert wiring. Single-node development clusters prove
+  logic, not multi-node Raft durability.

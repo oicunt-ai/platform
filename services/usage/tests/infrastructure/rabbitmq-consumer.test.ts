@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import type amqplib from 'amqplib';
 import {
   type AmqpChannelLike,
@@ -16,14 +16,18 @@ describe('RabbitMqUsageConsumer', () => {
     consume: vi
       .fn()
       .mockResolvedValue({ consumerTag: 'tag-1' } as unknown as amqplib.Replies.Consume),
+    publish: vi.fn().mockReturnValue(true),
+    waitForConfirms: vi.fn().mockResolvedValue(undefined),
     ack: vi.fn(),
     nack: vi.fn(),
     close: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(),
   });
 
   const createMockConnection = (channel: AmqpChannelLike): AmqpConnectionLike => ({
-    createChannel: vi.fn().mockResolvedValue(channel),
+    createConfirmChannel: vi.fn().mockResolvedValue(channel),
     close: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(),
   });
 
   it('initializes topology and consumes from oicunt.usage.events', async () => {
@@ -49,6 +53,42 @@ describe('RabbitMqUsageConsumer', () => {
       'oicunt.usage',
       'usage.v1.#',
     );
+    // Bounded-delay retry tiers: durable quorum queues, one fixed TTL each,
+    // dead-lettering back with the stamped routing key that the existing
+    // usage.v1.# binding routes to the main queue.
+    expect(channel.assertQueue).toHaveBeenCalledWith('oicunt.usage.retry.5s', {
+      durable: true,
+      messageTtl: 5000,
+      deadLetterExchange: 'oicunt.usage',
+      deadLetterRoutingKey: 'usage.v1.retry',
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-strategy': 'at-least-once',
+        'x-overflow': 'reject-publish',
+      },
+    });
+    expect(channel.assertQueue).toHaveBeenCalledWith('oicunt.usage.retry.30s', {
+      durable: true,
+      messageTtl: 30000,
+      deadLetterExchange: 'oicunt.usage',
+      deadLetterRoutingKey: 'usage.v1.retry',
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-strategy': 'at-least-once',
+        'x-overflow': 'reject-publish',
+      },
+    });
+    expect(channel.assertQueue).toHaveBeenCalledWith('oicunt.usage.retry.5m', {
+      durable: true,
+      messageTtl: 300000,
+      deadLetterExchange: 'oicunt.usage',
+      deadLetterRoutingKey: 'usage.v1.retry',
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-strategy': 'at-least-once',
+        'x-overflow': 'reject-publish',
+      },
+    });
   });
 
   it('acks messages on successful durable processing', async () => {
@@ -71,7 +111,7 @@ describe('RabbitMqUsageConsumer', () => {
     expect(channel.nack).not.toHaveBeenCalled();
   });
 
-  it('nacks malformed JSON messages without requeue (routes to DLQ)', async () => {
+  it('publishes malformed JSON to the DLQ with confirmation before ack', async () => {
     const channel = createMockChannel();
     const connection = createMockConnection(channel);
     const consumer = new RabbitMqUsageConsumer({}, connection);
@@ -82,16 +122,26 @@ describe('RabbitMqUsageConsumer', () => {
 
     const malformedMsg = {
       content: Buffer.from('{ not-valid-json: '),
+      properties: {},
     } as unknown as amqplib.ConsumeMessage;
 
     await consumer.processMessage(malformedMsg);
 
     expect(handler).not.toHaveBeenCalled();
-    expect(channel.nack).toHaveBeenCalledWith(malformedMsg, false, false);
-    expect(channel.ack).not.toHaveBeenCalled();
+    expect(channel.publish).toHaveBeenCalledTimes(1);
+    const [exchange, routingKey, , options] = (channel.publish as ReturnType<typeof vi.fn>).mock
+      .calls[0] as [string, string, Buffer, Record<string, unknown>];
+    expect(exchange).toBe('');
+    expect(routingKey).toBe('oicunt.usage.dlq');
+    expect(options['mandatory']).toBe(true);
+    expect((options['headers'] as Record<string, unknown>)['x-usage-dlq-reason']).toBe(
+      'malformed_json',
+    );
+    expect(channel.ack).toHaveBeenCalledWith(malformedMsg);
+    expect(channel.nack).not.toHaveBeenCalled();
   });
 
-  it('nacks permanent validation errors without requeue (routes to DLQ)', async () => {
+  it('publishes permanent validation errors to the DLQ with confirmation', async () => {
     const channel = createMockChannel();
     const connection = createMockConnection(channel);
     const consumer = new RabbitMqUsageConsumer({}, connection);
@@ -102,15 +152,23 @@ describe('RabbitMqUsageConsumer', () => {
 
     const invalidMsg = {
       content: Buffer.from(JSON.stringify({ bad: 'event' })),
+      properties: {},
     } as unknown as amqplib.ConsumeMessage;
 
     await consumer.processMessage(invalidMsg);
 
-    expect(channel.nack).toHaveBeenCalledWith(invalidMsg, false, false);
-    expect(channel.ack).not.toHaveBeenCalled();
+    expect(channel.publish).toHaveBeenCalledTimes(1);
+    const [, routingKey, , options] = (channel.publish as ReturnType<typeof vi.fn>).mock
+      .calls[0] as [string, string, Buffer, Record<string, unknown>];
+    expect(routingKey).toBe('oicunt.usage.dlq');
+    expect((options['headers'] as Record<string, unknown>)['x-usage-dlq-reason']).toBe(
+      'validation',
+    );
+    expect(channel.ack).toHaveBeenCalledWith(invalidMsg);
+    expect(channel.nack).not.toHaveBeenCalled();
   });
 
-  it('nacks transient errors with requeue=true for safe retry', async () => {
+  it('schedules a delayed retry on transient errors and acks only after confirm', async () => {
     const channel = createMockChannel();
     const connection = createMockConnection(channel);
     const consumer = new RabbitMqUsageConsumer({}, connection);
@@ -123,11 +181,24 @@ describe('RabbitMqUsageConsumer', () => {
 
     const msg = {
       content: Buffer.from(JSON.stringify({ valid: 'payload' })),
+      properties: {},
     } as unknown as amqplib.ConsumeMessage;
 
     await consumer.processMessage(msg);
 
-    expect(channel.nack).toHaveBeenCalledWith(msg, false, true);
-    expect(channel.ack).not.toHaveBeenCalled();
+    // Retry copy published to the first tier with attempt header, confirmed,
+    // then the original acknowledged â€” never requeued hot.
+    expect(channel.publish).toHaveBeenCalledTimes(1);
+    const [exchange, routingKey, content, options] = (channel.publish as ReturnType<typeof vi.fn>)
+      .mock.calls[0] as [string, string, Buffer, Record<string, unknown>];
+    expect(exchange).toBe('');
+    expect(routingKey).toBe('oicunt.usage.retry.5s');
+    expect(content).toEqual(msg.content);
+    expect(options['persistent']).toBe(true);
+    expect(options['mandatory']).toBe(true);
+    expect((options['headers'] as Record<string, unknown>)['x-usage-attempts']).toBe(1);
+    expect(channel.waitForConfirms).toHaveBeenCalledTimes(1);
+    expect(channel.ack).toHaveBeenCalledWith(msg);
+    expect(channel.nack).not.toHaveBeenCalled();
   });
 });

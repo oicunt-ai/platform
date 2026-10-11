@@ -18,6 +18,14 @@ export interface UsageConfig {
   readonly rabbitmqDlq: string;
   readonly rabbitmqRoutingKeyPattern: string;
   readonly rabbitmqPrefetch: number;
+  /** Delivery attempts per event before DLQ (initial + delayed retries). */
+  readonly rabbitmqMaxAttempts: number;
+  /** First reconnect delay after broker connection loss. */
+  readonly rabbitmqReconnectInitialMs: number;
+  /** Upper bound for reconnect delays. */
+  readonly rabbitmqReconnectMaxMs: number;
+  /** Upper bound for a single broker publish confirmation. */
+  readonly rabbitmqConfirmTimeoutMs: number;
   readonly tenantRequestsPerMinute: number;
   readonly userRequestsPerMinute: number;
   readonly tenantConcurrentStreams: number;
@@ -122,6 +130,18 @@ export function loadUsageConfig(overrides: Partial<UsageConfig> = {}): UsageConf
     rabbitmqPrefetch:
       overrides.rabbitmqPrefetch ??
       Number.parseInt(process.env['USAGE_RABBITMQ_PREFETCH'] ?? '50', 10),
+    rabbitmqMaxAttempts:
+      overrides.rabbitmqMaxAttempts ??
+      Number.parseInt(process.env['USAGE_RABBITMQ_MAX_ATTEMPTS'] ?? '5', 10),
+    rabbitmqReconnectInitialMs:
+      overrides.rabbitmqReconnectInitialMs ??
+      Number.parseInt(process.env['USAGE_RABBITMQ_RECONNECT_INITIAL_MS'] ?? '1000', 10),
+    rabbitmqReconnectMaxMs:
+      overrides.rabbitmqReconnectMaxMs ??
+      Number.parseInt(process.env['USAGE_RABBITMQ_RECONNECT_MAX_MS'] ?? '30000', 10),
+    rabbitmqConfirmTimeoutMs:
+      overrides.rabbitmqConfirmTimeoutMs ??
+      Number.parseInt(process.env['USAGE_RABBITMQ_CONFIRM_TIMEOUT_MS'] ?? '10000', 10),
     tenantRequestsPerMinute:
       overrides.tenantRequestsPerMinute ??
       Number.parseInt(process.env['TENANT_REQUESTS_PER_MINUTE'] ?? '120', 10),

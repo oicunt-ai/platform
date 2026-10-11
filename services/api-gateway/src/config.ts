@@ -18,7 +18,54 @@ export interface GatewayConfig extends BaseServiceConfig {
   readonly orchestratorInternalSecret?: string | undefined;
   readonly usageInternalSecret?: string | undefined;
   readonly usageBaseUrl: string;
-  readonly enableUsageAdmission?: boolean | undefined;
+  /**
+   * Explicit deployment-controlled admission switch. Always resolved to a
+   * concrete boolean: production requires an explicit 'true'/'false'
+   * setting and fails startup otherwise; other environments default to
+   * disabled. Never implied by NODE_ENV.
+   */
+  readonly enableUsageAdmission: boolean;
+}
+
+/**
+ * Parses an explicit boolean feature switch. Returns undefined when unset;
+ * throws on any other value so typos can neither silently enable nor
+ * silently disable admission.
+ */
+export function parseExplicitSwitch(raw: string | undefined, name: string): boolean | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'true') {
+    return true;
+  }
+  if (normalized === 'false') {
+    return false;
+  }
+  throw new Error(
+    `${name} must be explicitly 'true' or 'false' when set (received '${raw.trim()}')`,
+  );
+}
+
+function resolveUsageAdmission(
+  env: Environment,
+  override: boolean | undefined,
+  rawEnv: string | undefined,
+): boolean {
+  if (override !== undefined) {
+    return override;
+  }
+  const parsed = parseExplicitSwitch(rawEnv, 'ENABLE_USAGE_ADMISSION');
+  if (parsed !== undefined) {
+    return parsed;
+  }
+  if (env === 'production') {
+    throw new Error(
+      "ENABLE_USAGE_ADMISSION must be explicitly 'true' or 'false' in production (no implicit activation)",
+    );
+  }
+  return false;
 }
 
 export function loadServiceConfig(overrides?: Partial<GatewayConfig>): GatewayConfig {
@@ -77,9 +124,11 @@ export function loadServiceConfig(overrides?: Partial<GatewayConfig>): GatewayCo
     orchestratorInternalSecret,
     usageInternalSecret,
     usageBaseUrl,
-    enableUsageAdmission:
-      overrides?.enableUsageAdmission ??
-      (env === 'production' || process.env['ENABLE_USAGE_ADMISSION'] === 'true'),
+    enableUsageAdmission: resolveUsageAdmission(
+      env,
+      overrides?.enableUsageAdmission,
+      process.env['ENABLE_USAGE_ADMISSION'],
+    ),
   };
 
   if (env === 'production') {

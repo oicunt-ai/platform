@@ -1,0 +1,348 @@
+{
+  "version": "usage-event-v1",
+  "generatedBy": "model-gateway DispatchModelUseCase via tests/contract/generate-fixtures.test.ts (do not hand-edit)",
+  "cases": [
+    {
+      "name": "success-provider-usage",
+      "description": "Successful completion with provider-reported token counts.",
+      "expect": "accept",
+      "event": {
+        "eventId": "<event-id>",
+        "schemaVersion": "1.0.0",
+        "tenantId": "tnt_contract",
+        "userId": "usr_contract",
+        "actorId": "api-gateway",
+        "productId": "billy",
+        "sourceService": "model-gateway",
+        "operation": "model.completion",
+        "resourceId": "oicunt.model.catalog-alpha",
+        "measurements": {
+          "tokens.input": 10,
+          "tokens.output": 20,
+          "tokens.total": 30,
+          "units.requests": 1
+        },
+        "dimensions": {
+          "provider": "test-provider",
+          "targetId": "target-contract",
+          "finishReason": "stop",
+          "usageSource": "provider"
+        },
+        "lineage": {
+          "correlationId": "corr-contract",
+          "requestId": "req-contract",
+          "sessionId": "conv_contract"
+        },
+        "idempotencyKey": "<idempotency-key>",
+        "occurredAt": "<occurred-at>"
+      }
+    },
+    {
+      "name": "success-unknown-usage",
+      "description": "Successful completion whose adapter reported no usage provenance.",
+      "expect": "accept",
+      "event": {
+        "eventId": "<event-id>",
+        "schemaVersion": "1.0.0",
+        "tenantId": "tnt_contract",
+        "userId": "usr_contract",
+        "actorId": "api-gateway",
+        "productId": "billy",
+        "sourceService": "model-gateway",
+        "operation": "model.completion",
+        "resourceId": "oicunt.model.catalog-alpha",
+        "measurements": {
+          "tokens.input": 4,
+          "tokens.output": 5,
+          "tokens.total": 9,
+          "units.requests": 1
+        },
+        "dimensions": {
+          "provider": "test-provider",
+          "targetId": "target-contract",
+          "finishReason": "stop",
+          "usageSource": "unknown"
+        },
+        "lineage": {
+          "correlationId": "corr-contract",
+          "requestId": "req-contract",
+          "sessionId": "conv_contract"
+        },
+        "idempotencyKey": "<idempotency-key>",
+        "occurredAt": "<occurred-at>"
+      }
+    },
+    {
+      "name": "success-zero-confirmed",
+      "description": "Provider explicitly reported zero tokens (confirmed, not unknown).",
+      "expect": "accept",
+      "event": {
+        "eventId": "<event-id>",
+        "schemaVersion": "1.0.0",
+        "tenantId": "tnt_contract",
+        "userId": "usr_contract",
+        "actorId": "api-gateway",
+        "productId": "billy",
+        "sourceService": "model-gateway",
+        "operation": "model.completion",
+        "resourceId": "oicunt.model.catalog-alpha",
+        "measurements": {
+          "tokens.input": 0,
+          "tokens.output": 0,
+          "tokens.total": 0,
+          "units.requests": 1
+        },
+        "dimensions": {
+          "provider": "test-provider",
+          "targetId": "target-contract",
+          "finishReason": "stop",
+          "usageSource": "provider"
+        },
+        "lineage": {
+          "correlationId": "corr-contract",
+          "requestId": "req-contract",
+          "sessionId": "conv_contract"
+        },
+        "idempotencyKey": "<idempotency-key>",
+        "occurredAt": "<occurred-at>"
+      }
+    },
+    {
+      "name": "failure-provider-usage",
+      "description": "Interrupted stream that carried provider-reported usage before failing.",
+      "expect": "accept",
+      "event": {
+        "eventId": "<event-id>",
+        "schemaVersion": "1.0.0",
+        "tenantId": "tnt_contract",
+        "userId": "usr_contract",
+        "actorId": "api-gateway",
+        "productId": "billy",
+        "sourceService": "model-gateway",
+        "operation": "model.completion",
+        "resourceId": "oicunt.model.catalog-alpha",
+        "measurements": {
+          "tokens.input": 7,
+          "tokens.output": 3,
+          "tokens.total": 10,
+          "units.requests": 1
+        },
+        "dimensions": {
+          "provider": "test-provider",
+          "targetId": "target-contract",
+          "outcome": "STREAM_INTERRUPTED",
+          "usageSource": "provider"
+        },
+        "lineage": {
+          "correlationId": "corr-contract",
+          "requestId": "req-contract",
+          "sessionId": "conv_contract"
+        },
+        "idempotencyKey": "<idempotency-key>",
+        "occurredAt": "<occurred-at>"
+      }
+    },
+    {
+      "name": "failure-unknown-usage",
+      "description": "Interrupted stream with no usage observed: units.requests only, no token keys.",
+      "expect": "accept",
+      "event": {
+        "eventId": "<event-id>",
+        "schemaVersion": "1.0.0",
+        "tenantId": "tnt_contract",
+        "userId": "usr_contract",
+        "actorId": "api-gateway",
+        "productId": "billy",
+        "sourceService": "model-gateway",
+        "operation": "model.completion",
+        "resourceId": "oicunt.model.catalog-alpha",
+        "measurements": {
+          "units.requests": 1
+        },
+        "dimensions": {
+          "provider": "test-provider",
+          "targetId": "target-contract",
+          "outcome": "STREAM_INTERRUPTED",
+          "usageSource": "unknown"
+        },
+        "lineage": {
+          "correlationId": "corr-contract",
+          "requestId": "req-contract",
+          "sessionId": "conv_contract"
+        },
+        "idempotencyKey": "<idempotency-key>",
+        "occurredAt": "<occurred-at>"
+      }
+    },
+    {
+      "name": "identities-omitted",
+      "description": "Optional userId and conversationId omitted: keys absent, never fabricated.",
+      "expect": "accept",
+      "event": {
+        "eventId": "<event-id>",
+        "schemaVersion": "1.0.0",
+        "tenantId": "tnt_contract",
+        "actorId": "api-gateway",
+        "productId": "billy",
+        "sourceService": "model-gateway",
+        "operation": "model.completion",
+        "resourceId": "oicunt.model.catalog-alpha",
+        "measurements": {
+          "tokens.input": 1,
+          "tokens.output": 1,
+          "tokens.total": 2,
+          "units.requests": 1
+        },
+        "dimensions": {
+          "provider": "test-provider",
+          "targetId": "target-contract",
+          "finishReason": "stop",
+          "usageSource": "provider"
+        },
+        "lineage": {
+          "correlationId": "corr-contract",
+          "requestId": "req-contract"
+        },
+        "idempotencyKey": "<idempotency-key>",
+        "occurredAt": "<occurred-at>"
+      }
+    },
+    {
+      "name": "retry-stability",
+      "description": "Same event captured twice resolves to one identity (replay-safe).",
+      "expect": "accept",
+      "event": {
+        "eventId": "<event-id>",
+        "schemaVersion": "1.0.0",
+        "tenantId": "tnt_contract",
+        "userId": "usr_contract",
+        "actorId": "api-gateway",
+        "productId": "billy",
+        "sourceService": "model-gateway",
+        "operation": "model.completion",
+        "resourceId": "oicunt.model.catalog-alpha",
+        "measurements": {
+          "tokens.input": 2,
+          "tokens.output": 2,
+          "tokens.total": 4,
+          "units.requests": 1
+        },
+        "dimensions": {
+          "provider": "test-provider",
+          "targetId": "target-contract",
+          "finishReason": "stop",
+          "usageSource": "provider"
+        },
+        "lineage": {
+          "correlationId": "corr-contract",
+          "requestId": "req-contract",
+          "sessionId": "conv_contract"
+        },
+        "idempotencyKey": "<idempotency-key>",
+        "occurredAt": "<occurred-at>"
+      }
+    },
+    {
+      "name": "synthetic-actor",
+      "description": "Explicitly supplied actorId \"system\" flows through unmodified; Platform MUST reject it as synthetic.",
+      "expect": "reject",
+      "event": {
+        "eventId": "<event-id>",
+        "schemaVersion": "1.0.0",
+        "tenantId": "tnt_contract",
+        "actorId": "system",
+        "productId": "billy",
+        "sourceService": "model-gateway",
+        "operation": "model.completion",
+        "resourceId": "oicunt.model.catalog-alpha",
+        "measurements": {
+          "tokens.input": 1,
+          "tokens.output": 1,
+          "tokens.total": 2,
+          "units.requests": 1
+        },
+        "dimensions": {
+          "provider": "test-provider",
+          "targetId": "target-contract",
+          "finishReason": "stop",
+          "usageSource": "provider"
+        },
+        "lineage": {
+          "correlationId": "corr-contract",
+          "requestId": "req-contract"
+        },
+        "idempotencyKey": "<idempotency-key>",
+        "occurredAt": "<occurred-at>"
+      }
+    },
+    {
+      "name": "actor-omitted",
+      "description": "No actor identity anywhere: actorId omitted from the event (valid), never manufactured.",
+      "expect": "accept",
+      "event": {
+        "eventId": "<event-id>",
+        "schemaVersion": "1.0.0",
+        "tenantId": "tnt_contract",
+        "userId": "usr_contract",
+        "productId": "billy",
+        "sourceService": "model-gateway",
+        "operation": "model.completion",
+        "resourceId": "oicunt.model.catalog-alpha",
+        "measurements": {
+          "tokens.input": 3,
+          "tokens.output": 2,
+          "tokens.total": 5,
+          "units.requests": 1
+        },
+        "dimensions": {
+          "provider": "test-provider",
+          "targetId": "target-contract",
+          "finishReason": "stop",
+          "usageSource": "provider"
+        },
+        "lineage": {
+          "correlationId": "corr-contract",
+          "requestId": "req-contract",
+          "sessionId": "conv_contract"
+        },
+        "idempotencyKey": "<idempotency-key>",
+        "occurredAt": "<occurred-at>"
+      }
+    },
+    {
+      "name": "billing-parity",
+      "description": "Live BILLY-chain identity shape (Task 24D observed values): tenant, user, and api-gateway actor preserved.",
+      "expect": "accept",
+      "event": {
+        "eventId": "<event-id>",
+        "schemaVersion": "1.0.0",
+        "tenantId": "tnt_dev_local",
+        "userId": "usr_dev_local",
+        "actorId": "api-gateway",
+        "productId": "billy",
+        "sourceService": "model-gateway",
+        "operation": "model.completion",
+        "resourceId": "oicunt.model.catalog-alpha",
+        "measurements": {
+          "tokens.input": 12,
+          "tokens.output": 8,
+          "tokens.total": 20,
+          "units.requests": 1
+        },
+        "dimensions": {
+          "provider": "test-provider",
+          "targetId": "target-contract",
+          "finishReason": "stop",
+          "usageSource": "provider"
+        },
+        "lineage": {
+          "correlationId": "corr-contract",
+          "requestId": "req-contract",
+          "sessionId": "conv_dev_local"
+        },
+        "idempotencyKey": "<idempotency-key>",
+        "occurredAt": "<occurred-at>"
+      }
+    }
+  ]
+}
