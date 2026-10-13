@@ -775,4 +775,10 @@ describe('usage admission launcher contract', () => {
     expect(overlay['DATABASE_HOST']).toBeUndefined();
     expect(admissionRequested({})).toBe(false);
   });
+
+  it('19. blank admission flag is rejected, not treated as absent', () => {
+    expect(parseAdmissionSwitch({ ENABLE_USAGE_ADMISSION: '' }).ok).toBe(false);
+    expect(parseAdmissionSwitch({ ENABLE_USAGE_ADMISSION: '   ' }).ok).toBe(false);
+    expect(parseAdmissionSwitch({})).toEqual({ ok: true, enabled: false });
+  });
 });

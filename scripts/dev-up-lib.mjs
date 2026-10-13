@@ -149,16 +149,25 @@ export const USAGE_DEV_URL = 'http://127.0.0.1:8090';
 
 /**
  * Parse the admission switch with the same contract as the Gateway config
- * parser: explicit 'true'/'false' (case-insensitive, trimmed) select a
- * state; absent or blank stays disabled; anything else is an error the
- * caller must reject (never silently coerced, never implicitly enabled).
+ * parser: absent stays disabled; explicit true/false (case-insensitive,
+ * trimmed) select a state; empty or any other value is an error the caller
+ * must reject (never silently coerced, never implicitly enabled). Blank is
+ * rejected — not treated as absent — to match Gateway strictness.
  */
 export function parseAdmissionSwitch(env) {
   const raw = env['ENABLE_USAGE_ADMISSION'];
-  if (raw === undefined || String(raw).trim() === '') {
+  if (raw === undefined) {
     return { ok: true, enabled: false };
   }
   const normalized = String(raw).trim().toLowerCase();
+  if (normalized === '') {
+    return {
+      ok: false,
+      reason:
+        "ENABLE_USAGE_ADMISSION must be explicitly 'true' or 'false' when set " +
+        '(blank values are rejected, not treated as absent)',
+    };
+  }
   if (normalized === 'true') {
     return { ok: true, enabled: true };
   }

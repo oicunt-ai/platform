@@ -254,4 +254,162 @@ describe('HttpUsageAdmissionClient - Unit Tests', () => {
     expect(failure.message).not.toContain('super-secret-value');
     expect(failure.message).not.toContain('ECONNREFUSED');
   });
+
+  it('11. bounds a stalled response body with GatewayTimeoutError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: () => new Promise(() => {}),
+      })),
+    );
+
+    const client = new HttpUsageAdmissionClient('http://usage.test', 'test-secret', 30);
+    const started = Date.now();
+    await expect(client.acquire({ ...baseInput, stream: false })).rejects.toBeInstanceOf(
+      GatewayTimeoutError,
+    );
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it('12. bounds a stalled release body instead of hanging the finalizer', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: () => new Promise(() => {}),
+      })),
+    );
+
+    const client = new HttpUsageAdmissionClient('http://usage.test', 'test-secret', 30);
+    await expect(client.release({ ...baseInput, leaseId: 'adm_123' })).rejects.toBeInstanceOf(
+      GatewayTimeoutError,
+    );
+  });
+
+  it('13. propagates caller abort during body reading without converting it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: () => new Promise(() => {}),
+      })),
+    );
+
+    const client = new HttpUsageAdmissionClient('http://usage.test', 'test-secret', 5000);
+    const controller = new AbortController();
+    const pending = client.acquire({ ...baseInput, stream: false, signal: controller.signal });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    controller.abort();
+    const failure = await pending.then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).not.toBeInstanceOf(GatewayTimeoutError);
+    expect(failure).not.toBeInstanceOf(BadGatewayError);
+    expect(failure).not.toBeInstanceOf(RateLimitedError);
+  });
+
+  it('14. performs no dependency operation when already aborted', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { allowed: true } }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new HttpUsageAdmissionClient('http://usage.test', 'test-secret');
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      client.acquire({ ...baseInput, stream: false, signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('15. maps successful status with invalid JSON to BadGatewayError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new Error('unexpected token');
+        },
+      })),
+    );
+
+    const client = new HttpUsageAdmissionClient('http://usage.test', 'test-secret');
+    await expect(client.acquire({ ...baseInput, stream: false })).rejects.toBeInstanceOf(
+      BadGatewayError,
+    );
+  });
+
+  it('16. maps successful status with missing allowed flag to BadGatewayError', async () => {
+    for (const body of [{}, { data: {} }, { data: { allowed: false } }]) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({ ok: true, status: 200, json: async () => body })),
+      );
+      const client = new HttpUsageAdmissionClient('http://usage.test', 'test-secret');
+      await expect(client.acquire({ ...baseInput, stream: false })).rejects.toBeInstanceOf(
+        BadGatewayError,
+      );
+    }
+  });
+
+  it('17. maps stream success without a valid lease to BadGatewayError', async () => {
+    for (const body of [
+      { data: { allowed: true } },
+      { data: { allowed: true, leaseId: '' } },
+      { data: { allowed: true, leaseId: 42 } },
+    ]) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({ ok: true, status: 200, json: async () => body })),
+      );
+      const client = new HttpUsageAdmissionClient('http://usage.test', 'test-secret');
+      await expect(client.acquire({ ...baseInput, stream: true })).rejects.toBeInstanceOf(
+        BadGatewayError,
+      );
+    }
+  });
+
+  it('18. maps release success without confirmation to BadGatewayError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) })),
+    );
+
+    const client = new HttpUsageAdmissionClient('http://usage.test', 'test-secret');
+    await expect(client.release({ ...baseInput, leaseId: 'adm_123' })).rejects.toBeInstanceOf(
+      BadGatewayError,
+    );
+  });
+
+  it('19. stays usable after timeouts with no stranded settlement', async () => {
+    let hanging = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        if (hanging) {
+          await new Promise(() => {});
+        }
+        return { ok: true, status: 200, json: async () => ({ data: { allowed: true } }) };
+      }),
+    );
+
+    const client = new HttpUsageAdmissionClient('http://usage.test', 'test-secret', 30);
+    await expect(client.acquire({ ...baseInput, stream: false })).rejects.toBeInstanceOf(
+      GatewayTimeoutError,
+    );
+    await expect(client.acquire({ ...baseInput, stream: false })).rejects.toBeInstanceOf(
+      GatewayTimeoutError,
+    );
+    hanging = false;
+    await expect(client.acquire({ ...baseInput, stream: false })).resolves.toEqual({});
+  });
 });
