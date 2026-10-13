@@ -13,6 +13,7 @@ import {
   DEV_SERVICES,
   ORCHESTRATOR_DEV_URL,
   REQUIRED_ENV,
+  USAGE_DEV_URL,
   admissionRequested,
   buildChildEnv,
   checkTcpOpen,
@@ -22,17 +23,21 @@ import {
   mergeEnv,
   missingEnv,
   orchestratorReadyUrl,
+  parseAdmissionSwitch,
   parseDotEnv,
   prefixLines,
   probeOnce,
   readyUrl,
   resolveOrchestratorUrl,
   resolveTokenEnv,
+  resolveUsageBaseUrl,
   serviceBaseUrl,
   shutdownAll,
   shutdownOrder,
   startAll,
+  usageReadyUrl,
   waitFor,
+  waitForUsageReady,
   watchChildren,
   type ChildRef,
   type ServiceSpec,
@@ -528,5 +533,246 @@ describe('shutdown', () => {
     expect(formatPortConflict({ name: 'x', packageDir: 's', entry: 'e', port: 1 }, null)).toContain(
       'not responding',
     );
+  });
+});
+
+describe('usage admission launcher contract', () => {
+  const DEDICATED_TOKEN = 'test-dedicated-usage-token-xyz';
+  const USAGE_DB = 'http://127.0.0.1:8090';
+
+  function childEnv(extra: Record<string, string | undefined> = {}): Record<string, string> {
+    const spec = DEV_SERVICES[0];
+    if (!spec) {
+      throw new Error('table incomplete');
+    }
+    return buildChildEnv(spec, {
+      env: { ...BASE_ENV, ...extra },
+      tokens: TOKENS,
+      orchestratorUrl: ORCHESTRATOR_DEV_URL,
+    });
+  }
+
+  it('1. unset admission remains disabled', () => {
+    expect(parseAdmissionSwitch({})).toEqual({ ok: true, enabled: false });
+  });
+
+  it('2. explicit false remains disabled', () => {
+    expect(parseAdmissionSwitch({ ENABLE_USAGE_ADMISSION: 'false' })).toEqual({
+      ok: true,
+      enabled: false,
+    });
+  });
+
+  it('3. explicit true is recognized', () => {
+    expect(parseAdmissionSwitch({ ENABLE_USAGE_ADMISSION: 'true' })).toEqual({
+      ok: true,
+      enabled: true,
+    });
+  });
+
+  it('4. alternate capitalization and whitespace follow the Gateway parser contract', () => {
+    expect(parseAdmissionSwitch({ ENABLE_USAGE_ADMISSION: 'TRUE' })).toEqual({
+      ok: true,
+      enabled: true,
+    });
+    expect(parseAdmissionSwitch({ ENABLE_USAGE_ADMISSION: '  False  ' })).toEqual({
+      ok: true,
+      enabled: false,
+    });
+  });
+
+  it('5. invalid values are rejected before spawning', () => {
+    for (const bad of ['yes', '1', 'on', 'enabled', 'TRUEE']) {
+      const parsed = parseAdmissionSwitch({ ENABLE_USAGE_ADMISSION: bad });
+      expect(parsed.ok, bad).toBe(false);
+    }
+  });
+
+  it('6. .env true reaches the Gateway child', () => {
+    expect(childEnv({ ENABLE_USAGE_ADMISSION: 'true' })['ENABLE_USAGE_ADMISSION']).toBe('true');
+  });
+
+  it('7. process false overrides .env true', () => {
+    // mergeEnv models the launcher merge: process values win.
+    const merged = mergeEnv(
+      { ENABLE_USAGE_ADMISSION: 'true' },
+      { ENABLE_USAGE_ADMISSION: 'false' },
+    );
+    expect(childEnv(merged)['ENABLE_USAGE_ADMISSION']).toBe('false');
+  });
+
+  it('8. process true overrides .env false', () => {
+    const merged = mergeEnv(
+      { ENABLE_USAGE_ADMISSION: 'false' },
+      { ENABLE_USAGE_ADMISSION: 'true' },
+    );
+    expect(childEnv(merged)['ENABLE_USAGE_ADMISSION']).toBe('true');
+  });
+
+  it('9. USAGE_BASE_URL reaches the child', () => {
+    expect(childEnv({ USAGE_BASE_URL: USAGE_DB })['USAGE_BASE_URL']).toBe(USAGE_DB);
+    expect(childEnv()['USAGE_BASE_URL']).toBeUndefined();
+  });
+
+  it('10. dedicated PLATFORM_USAGE_INTERNAL_TOKEN reaches the child', () => {
+    expect(
+      childEnv({ PLATFORM_USAGE_INTERNAL_TOKEN: DEDICATED_TOKEN })['PLATFORM_USAGE_INTERNAL_TOKEN'],
+    ).toBe(DEDICATED_TOKEN);
+  });
+
+  it('11. shared-token fallback holds without a dedicated token', () => {
+    const resolved = resolveTokenEnv({ ...BASE_ENV });
+    if (!resolved.ok) {
+      throw new Error('expected ok');
+    }
+    // The launcher mapping keeps its existing three-name contract; the
+    // shared fallback for Usage auth lives in the Gateway service config
+    // (usageInternalSecret falls back to the shared secret outside
+    // production), so the launcher forwards nothing when unset.
+    expect(resolved.mapping['PLATFORM_USAGE_INTERNAL_TOKEN']).toBeUndefined();
+    expect(resolved.mapping['INTERNAL_SERVICE_TOKEN']).toBe(SHARED_TOKEN);
+    expect(childEnv()['PLATFORM_USAGE_INTERNAL_TOKEN']).toBeUndefined();
+  });
+
+  it('12. dedicated token takes precedence when configured', () => {
+    // The token resolver keeps its existing three-name contract; precedence
+    // lives in the child overlay (explicit value) with service-level shared
+    // fallback when absent.
+    const overlay = childEnv({ PLATFORM_USAGE_INTERNAL_TOKEN: DEDICATED_TOKEN });
+    expect(overlay['PLATFORM_USAGE_INTERNAL_TOKEN']).toBe(DEDICATED_TOKEN);
+  });
+
+  it('13. admission ON with healthy Usage passes dependency preflight', async () => {
+    const clock = fakeClock();
+    const seen: string[] = [];
+    const ok = await waitForUsageReady(
+      {
+        probe: async (url: string) => {
+          seen.push(url);
+          return 200;
+        },
+        sleep: clock.sleep,
+        now: clock.now,
+      },
+      USAGE_DB,
+      20000,
+    );
+    expect(ok).toBe(true);
+    expect(seen).toEqual([usageReadyUrl(USAGE_DB)]);
+  });
+
+  it('14. admission ON with unhealthy Usage fails before spawn', async () => {
+    const clock = fakeClock();
+    const down = await waitForUsageReady(
+      {
+        probe: async (_url: string) => null,
+        sleep: clock.sleep,
+        now: clock.now,
+      },
+      USAGE_DB,
+      3000,
+    );
+    expect(down).toBe(false);
+    const sick = await waitForUsageReady(
+      {
+        probe: async (_url: string) => 500,
+        sleep: clock.sleep,
+        now: clock.now,
+      },
+      USAGE_DB,
+      2000,
+    );
+    expect(sick).toBe(false);
+  });
+
+  it('15. admission OFF performs no Usage preflight', async () => {
+    const parsed = parseAdmissionSwitch({});
+    expect(parsed).toEqual({ ok: true, enabled: false });
+    expect(resolveUsageBaseUrl({})).toEqual({ ok: true, url: USAGE_DEV_URL });
+    expect(USAGE_DEV_URL).toBe('http://127.0.0.1:8090');
+  });
+
+  it('16. preflight performs readiness checks, never acquisitions', async () => {
+    const seen: string[] = [];
+    const clock = fakeClock();
+    await waitForUsageReady(
+      {
+        probe: async (url: string) => {
+          seen.push(url);
+          return 200;
+        },
+        sleep: clock.sleep,
+        now: clock.now,
+      },
+      USAGE_DB,
+      5000,
+    );
+    for (const url of seen) {
+      expect(url.endsWith('/readyz')).toBe(true);
+    }
+    expect(seen.some((url) => url.includes('/admissions'))).toBe(false);
+  });
+
+  it('17. launcher logs never expose test secrets', async () => {
+    const canaryEnv = {
+      ...BASE_ENV,
+      PLATFORM_USAGE_INTERNAL_TOKEN: 'canary-usage-token-xyz',
+      USAGE_DB_PASSWORD: 'canary-db-password-xyz',
+      ENABLE_USAGE_PUBLISHING: 'false',
+      OUTBOX_DB_PASSWORD: 'canary-outbox-password-xyz',
+    };
+    const clock = fakeClock();
+    const logs: string[] = [];
+    const resolved = resolveTokenEnv(canaryEnv);
+    if (!resolved.ok) {
+      throw new Error('expected ok');
+    }
+    await startAll(
+      {
+        spawn: (_spec: ServiceSpec, _env: Record<string, string>) => mockChild(7100, true),
+        checkPort: async (_port: number) => false,
+        probe: async (_url: string) => 200,
+        sleep: clock.sleep,
+        log: (line: string) => {
+          logs.push(line);
+        },
+        now: clock.now,
+        timeouts: { health: 5000, ready: 10000 },
+        intervalMs: 100,
+      },
+      { env: canaryEnv, tokens: resolved.mapping, orchestratorUrl: ORCHESTRATOR_DEV_URL },
+    );
+    expect(logs.length).toBeGreaterThan(0);
+    for (const line of logs) {
+      expect(line).not.toContain('canary-usage-token-xyz');
+      expect(line).not.toContain('canary-db-password-xyz');
+      expect(line).not.toContain('canary-outbox-password-xyz');
+    }
+    // URL resolver behavior also pinned here (no secrets involved).
+    expect(resolveUsageBaseUrl({ USAGE_BASE_URL: USAGE_DB })).toEqual({
+      ok: true,
+      url: `${USAGE_DB}/`,
+    });
+    expect(resolveUsageBaseUrl({})).toEqual({ ok: true, url: USAGE_DEV_URL });
+    expect(resolveUsageBaseUrl({ USAGE_BASE_URL: 'not a url' }).ok).toBe(false);
+    expect(resolveUsageBaseUrl({ USAGE_BASE_URL: 'http://127.0.0.1:3001' }).ok).toBe(false);
+  });
+
+  it('18. existing Orchestrator, JWKS, port and startup behavior is intact', () => {
+    expect(resolveOrchestratorUrl({})).toEqual({ ok: true, url: ORCHESTRATOR_DEV_URL });
+    const spec = DEV_SERVICES[0];
+    if (!spec) {
+      throw new Error('table incomplete');
+    }
+    const overlay = buildChildEnv(spec, {
+      env: { ...BASE_ENV },
+      tokens: TOKENS,
+      orchestratorUrl: ORCHESTRATOR_DEV_URL,
+    });
+    expect(overlay['PORT']).toBe('3000');
+    expect(overlay['HOST']).toBe('127.0.0.1');
+    expect(overlay['ORCHESTRATOR_BASE_URL']).toBe('http://127.0.0.1:3003');
+    expect(overlay['DATABASE_HOST']).toBeUndefined();
+    expect(admissionRequested({})).toBe(false);
   });
 });

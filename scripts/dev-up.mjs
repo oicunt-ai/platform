@@ -16,19 +16,21 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEV_SERVICES,
-  admissionRequested,
   checkTcpOpen,
   formatMissingEnv,
   mergeEnv,
   missingEnv,
   orchestratorReadyUrl,
+  parseAdmissionSwitch,
   parseDotEnv,
   prefixLines,
   probeOnce,
   resolveOrchestratorUrl,
   resolveTokenEnv,
+  resolveUsageBaseUrl,
   shutdownAll,
   startAll,
+  waitForUsageReady,
   watchChildren,
 } from './dev-up-lib.mjs';
 
@@ -91,12 +93,21 @@ async function main() {
   if (!resolved.ok) {
     fail(formatMissingEnv(resolved.missing));
   }
-  if (admissionRequested(env)) {
-    fail(
-      'dev-up: ENABLE_USAGE_ADMISSION=true requires the Usage service, which this ' +
-        'launcher never starts (start it separately with `pnpm usage`). Unset it for the ' +
-        'ordinary Gateway development workflow.',
-    );
+  // Usage admission is opt-in: absent/false starts the ordinary Gateway;
+  // explicit true requires a ready Usage dependency (started separately
+  // with `pnpm usage`); anything else is rejected before spawning.
+  const admission = parseAdmissionSwitch(env);
+  if (!admission.ok) {
+    fail(`dev-up: ${admission.reason}`);
+  }
+  let usageUrl = null;
+  if (admission.enabled) {
+    const resolvedUsage = resolveUsageBaseUrl(env);
+    if (!resolvedUsage.ok) {
+      fail(`dev-up: ${resolvedUsage.reason}`);
+    } else {
+      usageUrl = resolvedUsage.url;
+    }
   }
 
   const orchestrator = resolveOrchestratorUrl(env);
@@ -145,6 +156,28 @@ async function main() {
       `dev-up: JWKS document unreachable at the configured JWKS_URI ` +
         '(start the development issuer first)',
     );
+  }
+
+  // Gated admission dependency: with admission explicitly enabled, the
+  // separately operated Usage service must answer readiness before the
+  // Gateway starts. A healthy endpoint proves availability, not credential
+  // compatibility; admission stays OFF without depending on Usage at all.
+  if (usageUrl !== null) {
+    const usageReady = await waitForUsageReady(
+      {
+        probe: (url) => probeOnce(url, { timeoutMs: 5000 }),
+        sleep: (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
+        now: Date.now,
+      },
+      usageUrl,
+      DEPENDENCY_TIMEOUT_MS,
+    );
+    if (!usageReady) {
+      fail(
+        `dev-up: Usage service not ready at ${usageUrl} ` +
+          '(start it separately with `pnpm usage` before enabling admission)',
+      );
+    }
   }
 
   const carries = new Map();

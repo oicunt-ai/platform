@@ -144,6 +144,99 @@ export function admissionRequested(env) {
   return env['ENABLE_USAGE_ADMISSION'] === 'true';
 }
 
+/** Default Usage endpoint for local development (loopback only). */
+export const USAGE_DEV_URL = 'http://127.0.0.1:8090';
+
+/**
+ * Parse the admission switch with the same contract as the Gateway config
+ * parser: explicit 'true'/'false' (case-insensitive, trimmed) select a
+ * state; absent or blank stays disabled; anything else is an error the
+ * caller must reject (never silently coerced, never implicitly enabled).
+ */
+export function parseAdmissionSwitch(env) {
+  const raw = env['ENABLE_USAGE_ADMISSION'];
+  if (raw === undefined || String(raw).trim() === '') {
+    return { ok: true, enabled: false };
+  }
+  const normalized = String(raw).trim().toLowerCase();
+  if (normalized === 'true') {
+    return { ok: true, enabled: true };
+  }
+  if (normalized === 'false') {
+    return { ok: true, enabled: false };
+  }
+  return {
+    ok: false,
+    reason:
+      "ENABLE_USAGE_ADMISSION must be explicitly 'true' or 'false' when set " +
+      '(no implicit activation)',
+  };
+}
+
+/**
+ * Resolve the Usage base URL the Gateway will call for admission. Unset
+ * means the enforced development default. An operator-set value must be a
+ * valid http(s) loopback URL and must not address a well-known unrelated
+ * local service (registry, gateway, orchestrator, memory, inference).
+ */
+export function resolveUsageBaseUrl(env) {
+  const raw = env['USAGE_BASE_URL'];
+  if (raw === undefined || String(raw).trim() === '') {
+    return { ok: true, url: USAGE_DEV_URL };
+  }
+  let parsed;
+  try {
+    parsed = new URL(String(raw).trim());
+  } catch {
+    return { ok: false, reason: 'USAGE_BASE_URL is not a valid URL' };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { ok: false, reason: 'USAGE_BASE_URL must use http(s)' };
+  }
+  if (
+    parsed.hostname !== '127.0.0.1' &&
+    parsed.hostname !== 'localhost' &&
+    parsed.hostname !== '::1'
+  ) {
+    return { ok: false, reason: 'USAGE_BASE_URL must target loopback' };
+  }
+  if (['3000', '3001', '3003', '3004', '3005'].includes(parsed.port)) {
+    return {
+      ok: false,
+      reason: `USAGE_BASE_URL points at port ${parsed.port} (not the Usage service); use :8090`,
+    };
+  }
+  return { ok: true, url: parsed.toString() };
+}
+
+/**
+ * Readiness URL for a Usage base URL. URL resolution (not string
+ * concatenation) guarantees exactly one slash.
+ */
+export function usageReadyUrl(base) {
+  return new URL('/readyz', base).toString();
+}
+
+/**
+ * Poll the Usage readiness endpoint until HTTP 200 or the budget expires.
+ * A healthy endpoint proves the dependency is reachable, not that admission
+ * credentials are compatible end to end.
+ */
+export async function waitForUsageReady(deps, baseUrl, timeoutMs) {
+  const target = usageReadyUrl(baseUrl);
+  const deadline = deps.now() + timeoutMs;
+  for (;;) {
+    const status = await deps.probe(target).catch(() => null);
+    if (status === 200) {
+      return true;
+    }
+    if (deps.now() >= deadline) {
+      return false;
+    }
+    await deps.sleep(1000);
+  }
+}
+
 /**
  * Build the exact child environment overlay for the Gateway from the real
  * service contract. Only contract-known variables are set; everything else
@@ -168,6 +261,20 @@ export function buildChildEnv(spec, ctx) {
   }
   if (env['JWT_AUDIENCE'] !== undefined) {
     overlay['JWT_AUDIENCE'] = env['JWT_AUDIENCE'];
+  }
+  // Usage admission contract (Gateway only): forward explicitly configured
+  // admission settings so the child honors the merged launcher environment
+  // (.env file with process-environment precedence). Presence-only: absent
+  // values stay absent (admission defaults OFF), explicit 'false' is
+  // preserved verbatim, and nothing here invents credentials.
+  if (env['ENABLE_USAGE_ADMISSION'] !== undefined) {
+    overlay['ENABLE_USAGE_ADMISSION'] = env['ENABLE_USAGE_ADMISSION'];
+  }
+  if (env['USAGE_BASE_URL'] !== undefined) {
+    overlay['USAGE_BASE_URL'] = env['USAGE_BASE_URL'];
+  }
+  if (env['PLATFORM_USAGE_INTERNAL_TOKEN'] !== undefined) {
+    overlay['PLATFORM_USAGE_INTERNAL_TOKEN'] = env['PLATFORM_USAGE_INTERNAL_TOKEN'];
   }
   if (env['LOG_LEVEL'] !== undefined) {
     overlay['LOG_LEVEL'] = env['LOG_LEVEL'];

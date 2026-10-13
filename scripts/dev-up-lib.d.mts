@@ -77,6 +77,7 @@ export declare const LOOPBACK_HOST: string;
 export declare const HEALTH_PATH: string;
 export declare const READY_PATH: string;
 export declare const ORCHESTRATOR_DEV_URL: string;
+export declare const USAGE_DEV_URL: string;
 export declare const DEV_SERVICES: readonly ServiceSpec[];
 export declare const REQUIRED_ENV: readonly string[];
 export declare const TOKEN_NAMES: readonly string[];
@@ -103,6 +104,20 @@ export declare function resolveOrchestratorUrl(
   env: Record<string, string | undefined>,
 ): { readonly ok: true; readonly url: string } | { readonly ok: false; readonly reason: string };
 export declare function admissionRequested(env: Record<string, string | undefined>): boolean;
+export declare function parseAdmissionSwitch(
+  env: Record<string, string | undefined>,
+):
+  | { readonly ok: true; readonly enabled: boolean }
+  | { readonly ok: false; readonly reason: string };
+export declare function resolveUsageBaseUrl(
+  env: Record<string, string | undefined>,
+): { readonly ok: true; readonly url: string } | { readonly ok: false; readonly reason: string };
+export declare function usageReadyUrl(base: string): string;
+export declare function waitForUsageReady(
+  deps: { readonly probe: ProbeFn; readonly sleep: SleepFn; readonly now?: NowFn | undefined },
+  baseUrl: string,
+  timeoutMs: number,
+): Promise<boolean>;
 export declare function buildChildEnv(spec: ServiceSpec, ctx: StartCtx): Record<string, string>;
 export declare function checkTcpOpen(
   host: string,
