@@ -47,6 +47,14 @@ export class CompletionController {
 
       // 2. Parse request JSON body
       const body = await parseJsonBody(req);
+      // Authorize and validate BEFORE admission acquisition: rejected
+      // requests must never consume admission quota. Forwarding keeps its
+      // own checks as defense in depth.
+      const eligibilityError = this.forwardCompletionUseCase.checkEligible(authResult.value, body);
+      if (eligibilityError) {
+        handleHttpError(res, eligibilityError, context);
+        return;
+      }
       if (this.admission) {
         const admission = await this.admission.acquire({
           tenantId: authResult.value.tenantId,

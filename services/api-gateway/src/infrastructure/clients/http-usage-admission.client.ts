@@ -1,12 +1,20 @@
 import { createInternalServiceToken } from '../jwt/internal-service-token.js';
 import type { UsageAdmissionPort } from '../../application/ports/usage-admission.port.js';
-import { BadGatewayError, RateLimitedError } from '../../domain/index.js';
+import { BadGatewayError, GatewayTimeoutError, RateLimitedError } from '../../domain/index.js';
+
+/** Default upper bound for one admission dependency call (matches health check). */
+const DEFAULT_ADMISSION_TIMEOUT_MS = 5000;
 
 export class HttpUsageAdmissionClient implements UsageAdmissionPort {
+  private readonly timeoutMs: number;
+
   constructor(
     private readonly baseUrl: string,
     private readonly secret?: string,
-  ) {}
+    timeoutMs?: number,
+  ) {
+    this.timeoutMs = timeoutMs ?? DEFAULT_ADMISSION_TIMEOUT_MS;
+  }
 
   async checkHealth(): Promise<boolean> {
     try {
@@ -69,12 +77,60 @@ export class HttpUsageAdmissionClient implements UsageAdmissionPort {
         requestId: context.requestId,
         correlationId: context.correlationId,
       })}`;
-    const response = await fetch(`${this.baseUrl.replace(/\/+$/, '')}${path}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      ...(signal ? { signal } : {}),
+    // Bounded dependency deadline composed with caller cancellation. A
+    // stalled Usage service must fail fast rather than hold the completion.
+    // Only the transport itself is guarded here: HTTP status mapping below
+    // runs outside the try so intentional RateLimited/BadGateway errors are
+    // never converted into a generic failure.
+    const controller = new AbortController();
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutGate = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        reject(new GatewayTimeoutError('Usage admission request timed out'));
+      }, this.timeoutMs);
+      if (typeof timer.unref === 'function') {
+        timer.unref();
+      }
     });
+    const onCallerAbort = (): void => {
+      controller.abort();
+    };
+    if (signal && !signal.aborted) {
+      signal.addEventListener('abort', onCallerAbort, { once: true });
+    }
+    let response: Response;
+    try {
+      response = await Promise.race([
+        fetch(`${this.baseUrl.replace(/\/+$/, '')}${path}`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        }),
+        timeoutGate,
+      ]);
+    } catch (error) {
+      if (signal?.aborted === true && !timedOut) {
+        // Caller cancelled first: propagate without converting, and never
+        // treat the outcome as an admission decision.
+        throw error;
+      }
+      if (timedOut) {
+        throw new GatewayTimeoutError('Usage admission request timed out');
+      }
+      // Transport failures carry host/port details: never leak them.
+      throw new BadGatewayError('Usage admission service is unavailable');
+    } finally {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+      if (signal) {
+        signal.removeEventListener('abort', onCallerAbort);
+      }
+    }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const error = payload as { error?: { code?: string; message?: string } };

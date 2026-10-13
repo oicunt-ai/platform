@@ -22,20 +22,29 @@ export interface ForwardCompletionInput {
 export class ForwardCompletionUseCase {
   constructor(private readonly orchestratorClient: OrchestratorClientPort) {}
 
+  /**
+   * Authorize and validate without contacting downstream. The completion
+   * controller runs this BEFORE admission acquisition so unauthorized or
+   * invalid requests never consume admission quota. execute() reuses the
+   * same check (defense in depth).
+   */
+  checkEligible(identity: IdentityContext, body: unknown): DomainError | null {
+    if (!hasScopeOrPermission(identity, 'ai:use')) {
+      return new ForbiddenError(
+        "Access denied: Caller lacks required 'ai:use' scope or permission",
+      );
+    }
+    return this.validatePayload(body);
+  }
+
   async execute(
     input: ForwardCompletionInput,
   ): Promise<Result<ForwardCompletionResponse, DomainError>> {
-    // 1. Authorize: check required 'ai:use' permission or scope
-    if (!hasScopeOrPermission(input.identity, 'ai:use')) {
-      return err(
-        new ForbiddenError("Access denied: Caller lacks required 'ai:use' scope or permission"),
-      );
-    }
-
-    // 2. Validate payload structure (unary JSON only in Step 1)
-    const validationError = this.validatePayload(input.body);
-    if (validationError) {
-      return err(validationError);
+    // Authorize ('ai:use') and validate the payload (unary JSON) up front so
+    // rejected requests never reach downstream or consume admission quota.
+    const preflightError = this.checkEligible(input.identity, input.body);
+    if (preflightError) {
+      return err(preflightError);
     }
 
     // 3. Forward to orchestrator with authoritative identity & correlation context
