@@ -6,11 +6,11 @@ never assume a previous session's state.
 
 ## Repositories
 
-| Repository | Owns | Consumes |
-|---|---|---|
-| `platform` | Gateway, identity enforcement, admission, Usage ledger, shared libs | AI Platform (orchestrator) downstream |
-| `ai-platform` | Orchestration, Registry, Inference, Model Gateway, providers, Memory | Upstream model providers |
-| `billy` | Standalone Next.js chat product + server BFF | Public Platform Gateway only |
+| Repository    | Owns                                                                 | Consumes                              |
+| ------------- | -------------------------------------------------------------------- | ------------------------------------- |
+| `platform`    | Gateway, identity enforcement, admission, Usage ledger, shared libs  | AI Platform (orchestrator) downstream |
+| `ai-platform` | Orchestration, Registry, Inference, Model Gateway, providers, Memory | Upstream model providers              |
+| `billy`       | Standalone Next.js chat product + server BFF                         | Public Platform Gateway only          |
 
 Upstream remotes (stable links): `github.com/oicunt-ai/platform`,
 `github.com/oicunt-ai/ai-platform`. BILLY has no CI badge/remote
@@ -18,19 +18,19 @@ convention documented; treat its origin as unspecified.
 
 ## Local ports (loopback only)
 
-| Service | Address |
-|---|---|
-| Platform Gateway | `127.0.0.1:3000` |
-| Model Registry | `127.0.0.1:3001` |
-| Model Gateway | `127.0.0.1:3002` |
-| AI Orchestrator | `127.0.0.1:3003` |
-| Inference | `127.0.0.1:3004` |
-| Memory | `127.0.0.1:3005` |
-| Platform Usage | `127.0.0.1:8090` |
-| BILLY app | `127.0.0.1:3100` |
-| Dev JWKS issuer | `127.0.0.1:4567` |
-| Postgres (compose) | `127.0.0.1:5433` (host `5432` is unrelated — never touch) |
-| RabbitMQ AMQP / management | `127.0.0.1:5672` / `127.0.0.1:15672` |
+| Service                    | Address                                                   |
+| -------------------------- | --------------------------------------------------------- |
+| Platform Gateway           | `127.0.0.1:3000`                                          |
+| Model Registry             | `127.0.0.1:3001`                                          |
+| Model Gateway              | `127.0.0.1:3002`                                          |
+| AI Orchestrator            | `127.0.0.1:3003`                                          |
+| Inference                  | `127.0.0.1:3004`                                          |
+| Memory                     | `127.0.0.1:3005`                                          |
+| Platform Usage             | `127.0.0.1:8090`                                          |
+| BILLY app                  | `127.0.0.1:3100`                                          |
+| Dev JWKS issuer            | `127.0.0.1:4567`                                          |
+| Postgres (compose)         | `127.0.0.1:5433` (host `5432` is unrelated — never touch) |
+| RabbitMQ AMQP / management | `127.0.0.1:5672` / `127.0.0.1:15672`                      |
 
 Databases: `oicunt_ai` (registry, outbox), `oicunt_memory`
 (conversations), `oicunt_usage` (events, aggregates, admission).
