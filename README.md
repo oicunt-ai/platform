@@ -33,7 +33,7 @@ platform/
 │   ├── events/              # Domain event envelopes & event bus contracts
 │   ├── logging/             # Structured logging interfaces & standard levels
 │   └── observability/       # Distributed tracing & metrics recorder interfaces
-├── services/                # Backend microservices & daemons (to be implemented)
+├── services/                # Backend microservices: api-gateway, usage
 ├── tests/                   # Monorepo-level integration & foundation tests
 └── scripts/                 # Platform automation scripts
 ```

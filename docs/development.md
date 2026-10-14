@@ -200,9 +200,11 @@ no second identity authority exists.
 
 The launcher forces `ORCHESTRATOR_BASE_URL=http://127.0.0.1:3003` when
 unset and rejects operator-set values that are unparsable or point at
-port 3001. `ENABLE_USAGE_ADMISSION=true` aborts startup: admission needs
-the Usage service, which this launcher never starts — run it separately
-with `pnpm usage`. There is no `--with-usage` option.
+port 3001. `ENABLE_USAGE_ADMISSION=true` does not start Usage itself —
+it gates Gateway startup on the separately operated Usage service being
+ready (run it with `pnpm usage`, which pins `127.0.0.1:8090`); absent or
+`false` starts the ordinary Gateway without the Usage dependency. There is
+no `--with-usage` option.
 
 ### Running, verifying, and stopping
 

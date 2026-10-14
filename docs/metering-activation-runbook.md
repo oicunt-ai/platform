@@ -1,5 +1,12 @@
 # Metering Activation — Controlled Integration Runbook
 
+> Status note (2026-10-13): development-stack metering has since been
+> activated and verified end-to-end (admission and publishing ON,
+> authenticated completion → admission → Groq inference → durable ledger →
+> settlement). The phase procedure below is retained as the reference for
+> repeatable activations; each phase still needs its own explicit
+> authorization before re-execution.
+
 Status: **PROCEDURE ONLY — DO NOT EXECUTE.** Each phase below needs its
 own explicit authorization. Publishing and admission stay disabled until
 the final phase. No step here has been run.
