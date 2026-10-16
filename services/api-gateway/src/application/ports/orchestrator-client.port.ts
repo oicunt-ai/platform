@@ -19,7 +19,7 @@ export interface ForwardCompletionResponse {
 export interface OrchestratorClientPort {
   checkHealth?(): Promise<boolean>;
   forwardResource?(request: {
-    readonly method: 'GET' | 'POST';
+    readonly method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
     readonly path: string;
     readonly requestId: string;
     readonly correlationId: string;

@@ -98,6 +98,17 @@ export function createHttpRouter(options: RouterOptions) {
         return;
       }
 
+      const conversationMatch = pathname.match(/^\/api\/v1\/ai\/conversations\/([^/]+)$/);
+      if ((method === 'PATCH' || method === 'DELETE') && conversationMatch?.[1]) {
+        await options.resourcesController.handle(
+          req,
+          res,
+          context,
+          `/internal/v1/orchestrator/conversations/${encodeURIComponent(decodeURIComponent(conversationMatch[1]))}`,
+        );
+        return;
+      }
+
       // 4. AI Completion Ingress Route: POST /api/v1/ai/completions
       if (pathname === '/api/v1/ai/completions') {
         if (method !== 'POST') {

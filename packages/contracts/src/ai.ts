@@ -1,5 +1,7 @@
-export const AI_PUBLIC_CONTRACT_VERSION = '1.1.0' as const;
+export const AI_PUBLIC_CONTRACT_VERSION = '1.2.0' as const;
 export const OICUNT_MODEL_ID_PATTERN = /^oicunt\.model\.[a-z0-9][a-z0-9._-]{0,47}$/;
+/** Maximum accepted conversation title length (characters, after trimming). */
+export const CONVERSATION_TITLE_MAX_LENGTH = 200;
 
 export type PublicAiErrorCode =
   | 'VALIDATION_ERROR'
@@ -65,10 +67,18 @@ export interface PublicConversation {
   readonly messageCount: number;
   readonly createdAt: string;
   readonly updatedAt: string;
+  /** Authoritative pin state, stored with the conversation (not browser-local). */
+  readonly pinned: boolean;
 }
 
 export interface CreateConversationRequest {
   readonly title?: string | undefined;
+}
+
+/** PATCH body for /api/v1/ai/conversations/:id; at least one field is required. */
+export interface UpdateConversationRequest {
+  readonly title?: string | undefined;
+  readonly pinned?: boolean | undefined;
 }
 
 export interface PublicConversationMessage {
@@ -214,6 +224,31 @@ export function validateCreateConversationRequest(value: unknown): readonly stri
     .map((key) => `${key} is not supported by the v1 conversation contract`);
   if ('title' in body && (typeof body['title'] !== 'string' || !body['title'].trim())) {
     errors.push('title must be a non-empty string when provided');
+  }
+  return errors;
+}
+
+export function validateUpdateConversationRequest(value: unknown): readonly string[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return ['Request body must be a JSON object'];
+  }
+  const body = value as Record<string, unknown>;
+  const errors = Object.keys(body)
+    .filter((key) => key !== 'title' && key !== 'pinned')
+    .map((key) => `${key} is not supported by the v1 conversation update contract`);
+  if (!('title' in body) && !('pinned' in body)) {
+    errors.push('at least one of title or pinned is required');
+  }
+  if ('title' in body) {
+    const title = body['title'];
+    if (typeof title !== 'string' || !title.trim()) {
+      errors.push('title must be a non-empty string when provided');
+    } else if (title.trim().length > CONVERSATION_TITLE_MAX_LENGTH) {
+      errors.push(`title must be at most ${CONVERSATION_TITLE_MAX_LENGTH} characters`);
+    }
+  }
+  if ('pinned' in body && typeof body['pinned'] !== 'boolean') {
+    errors.push('pinned must be a boolean when provided');
   }
   return errors;
 }

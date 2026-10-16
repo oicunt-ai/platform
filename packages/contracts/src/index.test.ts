@@ -7,6 +7,7 @@ import {
   isOk,
   ok,
   validateCreateCompletionRequest,
+  validateUpdateConversationRequest,
 } from './index.js';
 
 describe('@oicunt/contracts', () => {
@@ -89,5 +90,30 @@ describe('@oicunt/contracts', () => {
     expect(validateCreateCompletionRequest({ ...request, exposeReasoning: 'yes' })).toContain(
       'exposeReasoning must be a boolean',
     );
+  });
+
+  it('accepts title and pinned conversation updates', () => {
+    expect(validateUpdateConversationRequest({ title: 'Roadmap' })).toEqual([]);
+    expect(validateUpdateConversationRequest({ pinned: true })).toEqual([]);
+    expect(validateUpdateConversationRequest({ title: 'Roadmap', pinned: false })).toEqual([]);
+  });
+
+  it('rejects invalid conversation updates at the public boundary', () => {
+    expect(validateUpdateConversationRequest({})).toContain(
+      'at least one of title or pinned is required',
+    );
+    expect(validateUpdateConversationRequest({ title: '  ' })).toContain(
+      'title must be a non-empty string when provided',
+    );
+    expect(validateUpdateConversationRequest({ title: 'x'.repeat(201) })).toContain(
+      'title must be at most 200 characters',
+    );
+    expect(validateUpdateConversationRequest({ pinned: 'yes' })).toContain(
+      'pinned must be a boolean when provided',
+    );
+    expect(validateUpdateConversationRequest({ metadata: {} })).toContain(
+      'metadata is not supported by the v1 conversation update contract',
+    );
+    expect(validateUpdateConversationRequest(null)).toContain('Request body must be a JSON object');
   });
 });

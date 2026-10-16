@@ -1,5 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { validateCreateConversationRequest } from '@oicunt/contracts';
+import {
+  validateCreateConversationRequest,
+  validateUpdateConversationRequest,
+} from '@oicunt/contracts';
 import type { OrchestratorClientPort } from '../../../application/ports/orchestrator-client.port.js';
 import type { AuthenticateTokenUseCase } from '../../../application/use-cases/authenticate-token.use-case.js';
 import { ForbiddenError, ValidationError, hasScopeOrPermission } from '../../../domain/index.js';
@@ -29,11 +32,20 @@ export class ResourcesController {
       if (!auth.ok) throw auth.error;
       if (!hasScopeOrPermission(auth.value, 'ai:use')) throw new ForbiddenError('Access denied');
       if (!this.orchestrator.forwardResource) throw new Error('Resource API unavailable');
-      const method = req.method === 'POST' ? 'POST' : 'GET';
-      const body = method === 'POST' ? await parseJsonBody(req) : undefined;
+      const method =
+        req.method === 'POST' || req.method === 'PATCH' || req.method === 'DELETE'
+          ? req.method
+          : 'GET';
+      const body = method === 'POST' || method === 'PATCH' ? await parseJsonBody(req) : undefined;
+      let forwardedBody = body;
       if (method === 'POST' && path === '/internal/v1/orchestrator/conversations') {
         const errors = validateCreateConversationRequest(body);
         if (errors.length > 0) throw new ValidationError(errors.join('; '));
+      }
+      if (method === 'PATCH') {
+        const errors = validateUpdateConversationRequest(body);
+        if (errors.length > 0) throw new ValidationError(errors.join('; '));
+        forwardedBody = this.toInternalConversationPatch(body);
       }
       const result = await this.orchestrator.forwardResource({
         method,
@@ -42,7 +54,7 @@ export class ResourcesController {
         correlationId: context.correlationId,
         userId: auth.value.userId,
         tenantId: auth.value.tenantId,
-        body,
+        body: forwardedBody,
       });
       res.writeHead(result.statusCode, {
         'Content-Type': 'application/json; charset=utf-8',
@@ -51,7 +63,7 @@ export class ResourcesController {
       });
       const publicBody =
         result.statusCode >= 200 && result.statusCode < 300
-          ? this.toPublicResource(path, result.bodyData)
+          ? this.toPublicResource(method, path, result.bodyData)
           : normalizePublicAiError(result.statusCode, result.bodyData);
       res.end(typeof publicBody === 'string' ? publicBody : JSON.stringify(publicBody));
     } catch (error) {
@@ -59,7 +71,7 @@ export class ResourcesController {
     }
   }
 
-  private toPublicResource(path: string, body: unknown): unknown {
+  private toPublicResource(method: string, path: string, body: unknown): unknown {
     if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
     const envelope = body as JsonObject;
     const data = envelope['data'];
@@ -95,7 +107,25 @@ export class ResourcesController {
         };
       }
     }
+    if (method === 'DELETE') {
+      return { ...envelope, data: this.toPublicDeletion(data) };
+    }
+    if (method === 'PATCH') {
+      return { ...envelope, data: this.toPublicConversation(data) };
+    }
     return body;
+  }
+
+  /**
+   * Public `pinned` is stored in Memory's extensible conversation metadata,
+   * so the public contract never leaks the metadata envelope.
+   */
+  private toInternalConversationPatch(value: unknown): JsonObject {
+    const patch = this.asObject(value);
+    const translated: JsonObject = {};
+    if (patch['title'] !== undefined) translated['title'] = patch['title'];
+    if (patch['pinned'] !== undefined) translated['metadata'] = { pinned: patch['pinned'] };
+    return translated;
   }
 
   private toPublicModel(value: unknown): JsonObject {
@@ -121,6 +151,16 @@ export class ResourcesController {
       messageCount: conversation['messageCount'],
       createdAt: conversation['createdAt'],
       updatedAt: conversation['updatedAt'],
+      pinned: this.asObject(conversation['metadata'])['pinned'] === true,
+    };
+  }
+
+  private toPublicDeletion(value: unknown): JsonObject {
+    const result = this.asObject(value);
+    return {
+      deleted: result['deleted'] === true,
+      conversationId: result['conversationId'],
+      hard: result['hard'] === true,
     };
   }
 

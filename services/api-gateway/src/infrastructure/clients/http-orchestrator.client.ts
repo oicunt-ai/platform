@@ -153,7 +153,7 @@ export class HttpOrchestratorClient implements OrchestratorClientPort {
   }
 
   async forwardResource(request: {
-    readonly method: 'GET' | 'POST';
+    readonly method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
     readonly path: string;
     readonly requestId: string;
     readonly correlationId: string;
